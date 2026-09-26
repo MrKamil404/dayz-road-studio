@@ -1,0 +1,26 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# PyInstaller build artifacts
+/build/
+/dist/
+*.spec
+.uv-cache/
+
+# Local Terrain Builder projects and generated exports
+*.tv4p
+/roads.json
+/drogi.json
+
+# Temporary files and logs
+*.tmp
+*.bak
+*.log
+tv4p_merge_roads.exe
