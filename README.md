@@ -2,6 +2,9 @@
 
 A Windows application for merging roads from `.tv4p` projects, with geometry previews, filtering, selection and PNG export. The current application is written in Rust. The old Python script is retained as reference material.
 
+> [!CAUTION]
+> Always keep a separate backup copy of your Terrain Builder project before merging roads or saving a result. Keep the original input projects and write the merged result to a different file.
+
 ## Acknowledgements
 
 Special thanks to **WoozyMasta** for [tv4p-road-tool](https://github.com/WoozyMasta/tv4p-road-tool). This program was made possible by his work.
@@ -22,7 +25,7 @@ Current application version: **1.1** (`1.1.0` in Cargo). The version is shown in
 
 ## Application language
 
-Change the language in the application's top bar. Existing statuses and warnings also change language without reloading the project. Polish is the default. Model names, paths, IDs and units stay unchanged. Standard controls in native file dialogs and operating-system error details use the Windows system language.
+Change the language using the selector fixed in the bottom-right corner of the application. Existing statuses and warnings also change language without reloading the project. Polish is the default. Model names, paths, IDs and units stay unchanged. Standard controls in native file dialogs and operating-system error details use the Windows system language.
 
 Use `--lang` before a command to choose the GUI or CLI language:
 
@@ -40,6 +43,8 @@ Run `python tools/check_translations.py` to audit catalog coverage and message p
 
 Run `tv4p_merge_roads.exe`. Load projects A and B, choose the output file and merge the roads. The A, B and Result tabs have separate road lists, selections and view settings.
 
+Project controls remain at the top, the road list on the left, the preview in the centre and PNG export settings at the bottom. Both control bars are compact and keep their settings on one line when there is enough space; settings wrap on narrower windows. The language selector stays in the bottom-right corner. Short labels and buttons provide full descriptions in tooltips. The application theme is unchanged.
+
 - Search by ID or road part names. Additional filters cover road type, length range and selected roads only.
 - Click a row or road on the map to toggle selection. Selected roads are yellow. Select all visible roads or clear the selection using the corresponding buttons.
 - Use the mouse wheel to zoom and drag to pan. Fit buttons cover visible or selected roads.
@@ -52,13 +57,19 @@ Run `tv4p_merge_roads.exe`. Load projects A and B, choose the output file and me
 
 Default model folder: `P:\dz\structures\roads\parts`. Change it in the application if needed. The reader uses the lowest visual LOD mesh in **MLOD P3D** files and the `LB/PB`, `LE/PE`, `LH/LD`, `PH/PD` memory points. The X/Z projection provides the actual footprint, and connection points determine the next part's placement. ODOL files are not supported.
 
+> [!NOTE]
+> Road previews require unbinarized MLOD P3D models. ODOL or other non-MLOD files produce a warning. A missing file may use filename-derived geometry, but an existing file in an unsupported format is not silently replaced.
+
 A road contains a key part, its position and rotation, and separate branch chains. Rotation is read from `0x8C` in degrees using Terrain Builder's rotation direction. `0x92` extends the key part's end, `0x93` its beginning, and `0x94`/`0x95` its side connections. Left bends connect through the opposite end of the model. These field interpretations come from analysing TV4P data and models, rather than a published format specification.
 
 When a model file is missing, the reader derives the path from its filename: length for a straight part, angle and radius for a bend. Names `6` and `12` represent 6.25 m and 12.5 m; `0 2000` represents a 0.5° bend. Arc length equals `radius × angle in radians`. Unknown names and missing connectors produce warnings rather than arbitrary substitute geometry. Row tooltips show the numbers of MLOD and filename-derived parts. Road length includes the key part and all branches.
 
 ## Merging projects
 
-The merger checks road type and junction definitions (`0x88`, `0x89`), skips identical roads, allocates unique IDs and rebuilds the road block. Other data comes from A. A modified or moved road may be added as a separate road. The output path must differ from both inputs. Open the result in Terrain Builder before using it in your map project.
+> [!NOTE]
+> **Project A is the main (base) project. Project B contributes roads only.** The result keeps A's existing roads and adds roads from B that are not already present. All other project content comes from A; objects, layers, rasters and other non-road content from B are not imported.
+
+The merger checks road type and junction definitions (`0x88`, `0x89`), skips identical roads, allocates unique IDs and rebuilds the road block. A modified or moved road may be added as a separate road. The output path must differ from both inputs. Open the result in Terrain Builder before using it in your map project.
 
 ## Command line
 
