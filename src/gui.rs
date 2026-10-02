@@ -319,7 +319,7 @@ impl eframe::App for App {
                     });
                 if previous != self.language {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Title(
-                        self.language.tr("Scalanie dróg Terrain Builder"),
+                        format!("{} {}", self.language.tr("Scalanie dróg Terrain Builder"), crate::version()),
                     ));
                     ctx.request_repaint();
                 }
@@ -796,7 +796,11 @@ pub fn run(language: Language) -> Result<()> {
         viewport = viewport.with_icon(icon)
     }
     eframe::run_native(
-        &language.tr("Scalanie dróg Terrain Builder"),
+        &format!(
+            "{} {}",
+            language.tr("Scalanie dróg Terrain Builder"),
+            crate::version()
+        ),
         eframe::NativeOptions {
             viewport,
             ..Default::default()

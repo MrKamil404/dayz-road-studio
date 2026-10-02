@@ -1,76 +1,84 @@
-# Terrain Builder Road Merger — Rust
+# Terrain Builder Road Merger 1.1 — Rust
 
-[English documentation](README.en.md)
+A Windows application for merging roads from `.tv4p` projects, with geometry previews, filtering, selection and PNG export. The current application is written in Rust. The old Python script is retained as reference material.
 
-Aplikacja Windows do łączenia dróg z projektów `.tv4p`, z podglądem geometrii, filtrowaniem, zaznaczaniem i eksportem PNG. Aktualna aplikacja jest napisana w Rust. Stary skrypt Python pozostaje jako materiał referencyjny.
+## Acknowledgements
 
-## Ostatnie zmiany
+Special thanks to **WoozyMasta** for [tv4p-road-tool](https://github.com/WoozyMasta/tv4p-road-tool). This program was made possible by his work.
 
-- Przepisanie aplikacji na Rust i odczyt kształtu części z modeli MLOD P3D.
-- Listy i podglądy dróg dla A, B i wyniku, filtrowanie oraz zaznaczanie na liście i mapie.
-- Eksport tylko zaznaczonych dróg, własna rozdzielczość PNG (w tym 15360 × 15360) i zapis w tle.
-- Eksport na pełny obszar mapy z lewym dolnym rogiem (200000, 0), zachowujący współrzędne dróg.
-- Przełącznik języka **Polski / English**: tłumaczenia interfejsu, podpowiedzi, statusów, ostrzeżeń geometrii i komunikatów CLI.
+## Version
 
-## Język programu
+Current application version: **1.1** (`1.1.0` in Cargo). The version is shown in the window title and can be printed with `tv4p_merge_roads.exe --version`.
 
-Język zmienia się w górnym pasku aplikacji. Zmiana obejmuje również już wyświetlone statusy i ostrzeżenia, bez ponownego wczytywania projektu. Domyślnym językiem jest polski. Nazwy modeli, ścieżki, identyfikatory i jednostki pozostają bez zmian. Standardowe przyciski natywnych okien wyboru plików oraz szczegóły błędów systemowych pochodzą z Windows i używają języka systemu.
+## Recent changes
 
-Opcja `--lang` przed poleceniem ustawia język GUI lub CLI:
+- Rewritten in Rust, with road part shapes read from MLOD P3D models.
+- Separate road lists and previews for A, B and the result, with filtering and selection in the list and map.
+- Export selected roads only, custom PNG resolution including 15360 × 15360, and background export.
+- Full map export preserving road coordinates, with the bottom left corner at (200000, 0).
+- **Polski / English** language selector covering the interface, tooltips, statuses, geometry warnings and CLI messages.
+- The merge result marks roads added from B with a **NEW** label and green colour. A **New roads from B only** filter is available. Selected roads are yellow. These markers describe the current merge and survive model reloads, but are not stored in TV4P files.
+- The default model folder is `P:\dz\structures\roads\parts`. Models in that folder take precedence over paths stored in the project. ODOL and other non-MLOD models produce a red message above the preview; hover over it to see filenames, or inspect road warnings. Invalid models are not replaced with filename-derived geometry.
+
+## Application language
+
+Change the language in the application's top bar. Existing statuses and warnings also change language without reloading the project. Polish is the default. Model names, paths, IDs and units stay unchanged. Standard controls in native file dialogs and operating-system error details use the Windows system language.
+
+Use `--lang` before a command to choose the GUI or CLI language:
 
 ```powershell
 .\tv4p_merge_roads.exe --lang en
 .\tv4p_merge_roads.exe --lang pl
-.\tv4p_merge_roads.exe --lang en inspect-p3d "G:\dz\structures\roads\parts\asf2_30 25.p3d"
+.\tv4p_merge_roads.exe --lang en inspect-p3d "P:\dz\structures\roads\parts\asf2_30 25.p3d"
 ```
 
-Pełny katalog tłumaczeń aplikacji znajduje się w `src/translations.json`. Pliki JSON z eksportu zachowują stałe nazwy pól; tekst ostrzeżeń jest tłumaczony według wybranego języka.
+The complete application translation catalog is in `src/translations.json`. JSON exports retain stable field names; warning text uses the selected language.
 
-Kompletność katalogu i zgodność parametrów komunikatów można sprawdzić poleceniem `python tools/check_translations.py`.
+Run `python tools/check_translations.py` to audit catalog coverage and message placeholders.
 
-## Uruchomienie
+## Getting started
 
-Uruchom `tv4p_merge_roads.exe`. Wczytaj projekt A i B, wskaż plik wynikowy i połącz drogi. Zakładki A, B i Wynik mają osobne listy, zaznaczenia i ustawienia widoku.
+Run `tv4p_merge_roads.exe`. Load projects A and B, choose the output file and merge the roads. The A, B and Result tabs have separate road lists, selections and view settings.
 
-- Filtr tekstowy szuka po ID i nazwach części drogi. Dostępne są również filtr typu, zakres długości i widok tylko zaznaczonych.
-- Kliknięcie wiersza lub drogi na mapie przełącza zaznaczenie. Zaznaczone drogi są żółte. Można zaznaczyć wszystkie widoczne lub wyczyścić zaznaczenie.
-- Kółko myszy przybliża mapę, przeciąganie ją przesuwa. Przyciski dopasowania obejmują widoczne lub zaznaczone drogi.
-- Eksport PNG obejmuje drogi widoczne po filtrowaniu albo **tylko zaznaczone**, również zaznaczone ukryte przez filtr. Przycisk pokazuje liczbę dróg w zakresie eksportu. Szerokość i wysokość PNG można wpisać niezależnie (kliknij pole liczby); dostępne jest przezroczyste tło.
-- Domyślny eksport obejmuje **pełną mapę 15360 × 15360 m**, której lewy dolny róg ma współrzędne **E=200000, N=0**, i zapisuje obraz **15360 × 15360 px**. Rozmiar mapy, jej początek i rozdzielczość obrazu są osobnymi ustawieniami. Przy tych wartościach 1 piksel odpowiada 1 metrowi.
-- Eksport pełnej mapy zachowuje położenie dróg: `x=(E−E0)×szerokośćPNG/szerokośćMapy`, `y=wysokośćPNG−(N−N0)×wysokośćPNG/wysokośćMapy`. Północ jest u góry, nie ma marginesu ani dopasowywania do zaznaczenia. Geometria poza granicami jest przycinana. Po wyłączeniu pełnego obszaru mapy kadr dopasowuje się do eksportowanych dróg.
-- Dopuszczalne wymiary PNG to 128–32768 px na bok, maksymalnie 268 435 456 pikseli łącznie. Obraz 15360 × 15360 wymaga około 900 MiB na bufor RGBA oraz dodatkowej pamięci podczas zapisu. Eksport działa w tle i nie blokuje interfejsu.
+- Search by ID or road part names. Additional filters cover road type, length range and selected roads only.
+- Click a row or road on the map to toggle selection. Selected roads are yellow. Select all visible roads or clear the selection using the corresponding buttons.
+- Use the mouse wheel to zoom and drag to pan. Fit buttons cover visible or selected roads.
+- Export roads visible after filtering or **selected roads only**, including selected roads hidden by a filter. The export scope shows its road count. Enter PNG width and height independently by clicking the number fields. Transparent backgrounds are supported.
+- Default export covers the **full 15360 × 15360 m map**, with the bottom left corner at **E=200000, N=0**, producing a **15360 × 15360 px** image. Map size, map origin and image resolution are separate settings. These defaults give one pixel per metre.
+- Full map exports preserve road placement: `x=(E−E0)×pngWidth/mapWidth`, `y=pngHeight−(N−N0)×pngHeight/mapHeight`. North is at the top. There is no margin or framing around the selection. Geometry outside the map is clipped. Disable the full map area to fit the exported roads instead.
+- PNG dimensions can be 128–32768 px per side, with at most 268,435,456 pixels in total. A 15360 × 15360 image requires about 900 MiB for its RGBA buffer plus additional memory during saving. Export runs in the background without blocking the interface.
 
-## Geometria dróg
+## Road geometry
 
-Domyślny folder modeli: `G:\dz\structures\roads\parts`. Można go zmienić w aplikacji. Program odczytuje siatkę najniższego wizualnego LOD z plików **MLOD P3D** i punkty pamięci `LB/PB`, `LE/PE`, `LH/LD`, `PH/PD`. Rzut siatki na płaszczyznę X/Z wyznacza rzeczywisty kształt, a punkty połączenia wyznaczają pozycję następnej części. Pliki ODOL nie są obsługiwane.
+Default model folder: `P:\dz\structures\roads\parts`. Change it in the application if needed. The reader uses the lowest visual LOD mesh in **MLOD P3D** files and the `LB/PB`, `LE/PE`, `LH/LD`, `PH/PD` memory points. The X/Z projection provides the actual footprint, and connection points determine the next part's placement. ODOL files are not supported.
 
-Każda droga zawiera część bazową, jej pozycję i obrót oraz osobne łańcuchy odgałęzień. Odczyt stosuje obrót z `0x8C` w stopniach (zgodnie z kierunkiem obrotu Terrain Buildera); `0x92` wychodzi z końca części bazowej, `0x93` z początku, `0x94` i `0x95` z bocznych połączeń. Lewy łuk jest łączony przez przeciwny koniec modelu. Interpretacja tych pól pochodzi z analizy danych TV4P i modeli, nie z opublikowanej specyfikacji formatu.
+A road contains a key part, its position and rotation, and separate branch chains. Rotation is read from `0x8C` in degrees using Terrain Builder's rotation direction. `0x92` extends the key part's end, `0x93` its beginning, and `0x94`/`0x95` its side connections. Left bends connect through the opposite end of the model. These field interpretations come from analysing TV4P data and models, rather than a published format specification.
 
-Gdy pliku modelu brakuje, program oblicza przebieg z nazwy: prosty odcinek z długości, łuk z kąta i promienia. Nazwy `6` i `12` oznaczają odpowiednio 6,25 m i 12,5 m; łuk `0 2000` oznacza 0,5°. Długość łuku to `promień × kąt w radianach`. Nieznane nazwy i brakujące połączenia są zgłaszane przy drodze; program nie zastępuje ich dowolną geometrią. Liczby części odczytanych z MLOD i z nazw widać w podpowiedzi wiersza. Długość obejmuje część bazową i wszystkie gałęzie.
+When a model file is missing, the reader derives the path from its filename: length for a straight part, angle and radius for a bend. Names `6` and `12` represent 6.25 m and 12.5 m; `0 2000` represents a 0.5° bend. Arc length equals `radius × angle in radians`. Unknown names and missing connectors produce warnings rather than arbitrary substitute geometry. Row tooltips show the numbers of MLOD and filename-derived parts. Road length includes the key part and all branches.
 
-## Łączenie projektów
+## Merging projects
 
-Program sprawdza zgodność definicji typów i skrzyżowań (`0x88`, `0x89`), pomija identyczne drogi, nadaje dodanym elementom unikalne ID i przebudowuje blok dróg. Pozostałe dane pochodzą z A. Zmodyfikowana lub przesunięta droga może zostać dodana jako osobna droga. Plik wynikowy musi być inny niż oba wejścia. Wynik należy otworzyć w Terrain Builderze przed użyciem w projekcie mapy.
+The merger checks road type and junction definitions (`0x88`, `0x89`), skips identical roads, allocates unique IDs and rebuilds the road block. Other data comes from A. A modified or moved road may be added as a separate road. The output path must differ from both inputs. Open the result in Terrain Builder before using it in your map project.
 
-## Wiersz poleceń
+## Command line
 
 ```powershell
-.\tv4p_merge_roads.exe merge A.tv4p B.tv4p wynik.tv4p
-.\tv4p_merge_roads.exe png mapa.tv4p drogi.png
-.\tv4p_merge_roads.exe export mapa.tv4p drogi.json
-.\tv4p_merge_roads.exe roundtrip mapa.tv4p
-.\tv4p_merge_roads.exe types mapa.tv4p
-.\tv4p_merge_roads.exe inspect-p3d "G:\dz\structures\roads\parts\asf2_30 25.p3d"
+.\tv4p_merge_roads.exe --lang en merge A.tv4p B.tv4p output.tv4p
+.\tv4p_merge_roads.exe --lang en png map.tv4p roads.png
+.\tv4p_merge_roads.exe --lang en export map.tv4p roads.json
+.\tv4p_merge_roads.exe --lang en roundtrip map.tv4p
+.\tv4p_merge_roads.exe --lang en types map.tv4p
+.\tv4p_merge_roads.exe --lang en inspect-p3d "P:\dz\structures\roads\parts\asf2_30 25.p3d"
 ```
 
-Polecenia `png` i `export` przyjmują opcjonalny folder modeli jako ostatni argument. PNG z CLI ma rozmiar 2048 × 1536 i obejmuje wszystkie drogi.
+`png` and `export` accept an optional model folder as their last argument. CLI PNG export covers all roads at 2048 × 1536 px.
 
-## Budowanie
+## Building
 
-Wymagany Rust z narzędziami kompilacji Windows:
+Requires Rust and Windows compilation tools:
 
 ```powershell
 cargo build --release
 ```
 
-Gotowy program: `target\release\tv4p_merge_roads.exe`.
+Executable: `target\release\tv4p_merge_roads.exe`.
