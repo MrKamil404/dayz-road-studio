@@ -425,7 +425,7 @@ pub fn merge(a: &Path, b: &Path, out: &Path) -> Result<String> {
         bodies.len()
     ))
 }
-pub fn roundtrip(path: &Path) -> Result<()> {
+pub fn roundtrip(path: &Path, language: crate::i18n::Language) -> Result<()> {
     let b = fs::read(path)?;
     let bl = block(&b, 0x8a)?;
     let bodies: Vec<_> = bl
@@ -437,14 +437,23 @@ pub fn roundtrip(path: &Path) -> Result<()> {
     if rebuilt != b[bl.start..bl.end] {
         bail!("Roundtrip mismatch")
     };
-    println!("Road block roundtrip: identical ({} bytes)", rebuilt.len());
+    println!(
+        "{}",
+        language.tr(&format!(
+            "Road block roundtrip: identical ({} bytes)",
+            rebuilt.len()
+        ))
+    );
     Ok(())
 }
-pub fn types(path: &Path) -> Result<()> {
+pub fn types(path: &Path, language: crate::i18n::Language) -> Result<()> {
     let b = fs::read(path)?;
     for tag in [0x88, 0x89] {
         let bl = block(&b, tag)?;
-        println!("0x{tag:02X}: {} entries", bl.entries.len());
+        println!(
+            "{}",
+            language.tr(&format!("0x{tag:02X}: {} entries", bl.entries.len()))
+        );
         for e in bl.entries {
             let body = &b[e.start..e.start + e.len];
             for f in fields(body)? {

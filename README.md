@@ -1,5 +1,7 @@
 # Terrain Builder Road Merger — Rust
 
+[English documentation](README.en.md)
+
 Aplikacja Windows do łączenia dróg z projektów `.tv4p`, z podglądem geometrii, filtrowaniem, zaznaczaniem i eksportem PNG. Aktualna aplikacja jest napisana w Rust. Stary skrypt Python pozostaje jako materiał referencyjny.
 
 ## Ostatnie zmiany
@@ -8,6 +10,23 @@ Aplikacja Windows do łączenia dróg z projektów `.tv4p`, z podglądem geometr
 - Listy i podglądy dróg dla A, B i wyniku, filtrowanie oraz zaznaczanie na liście i mapie.
 - Eksport tylko zaznaczonych dróg, własna rozdzielczość PNG (w tym 15360 × 15360) i zapis w tle.
 - Eksport na pełny obszar mapy z lewym dolnym rogiem (200000, 0), zachowujący współrzędne dróg.
+- Przełącznik języka **Polski / English**: tłumaczenia interfejsu, podpowiedzi, statusów, ostrzeżeń geometrii i komunikatów CLI.
+
+## Język programu
+
+Język zmienia się w górnym pasku aplikacji. Zmiana obejmuje również już wyświetlone statusy i ostrzeżenia, bez ponownego wczytywania projektu. Domyślnym językiem jest polski. Nazwy modeli, ścieżki, identyfikatory i jednostki pozostają bez zmian. Standardowe przyciski natywnych okien wyboru plików oraz szczegóły błędów systemowych pochodzą z Windows i używają języka systemu.
+
+Opcja `--lang` przed poleceniem ustawia język GUI lub CLI:
+
+```powershell
+.\tv4p_merge_roads.exe --lang en
+.\tv4p_merge_roads.exe --lang pl
+.\tv4p_merge_roads.exe --lang en inspect-p3d "G:\dz\structures\roads\parts\asf2_30 25.p3d"
+```
+
+Pełny katalog tłumaczeń aplikacji znajduje się w `src/translations.json`. Pliki JSON z eksportu zachowują stałe nazwy pól; tekst ostrzeżeń jest tłumaczony według wybranego języka.
+
+Kompletność katalogu i zgodność parametrów komunikatów można sprawdzić poleceniem `python tools/check_translations.py`.
 
 ## Uruchomienie
 

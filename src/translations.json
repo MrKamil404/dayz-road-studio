@@ -1,0 +1,486 @@
+[
+  {
+    "pl": "Wczytaj projekt A lub B.",
+    "en": "Load project A or B."
+  },
+  {
+    "pl": "Wczytano {0} dróg · problemy geometrii: {1}",
+    "en": "Loaded {0} roads · geometry issues: {1}"
+  },
+  {
+    "pl": "Wymiary mapy muszą być dodatnie, a współrzędne skończone",
+    "en": "Map dimensions must be positive and coordinates must be finite"
+  },
+  {
+    "pl": "Brak dróg w wybranym zakresie eksportu",
+    "en": "No roads in the selected export scope"
+  },
+  {
+    "pl": "Eksport PNG musi mieć inną ścieżkę niż wczytany projekt",
+    "en": "PNG export must use a different path from the loaded project"
+  },
+  {
+    "pl": "PNG: {0} dróg · {1} × {2} px · {3}",
+    "en": "PNG: {0} roads · {1} × {2} px · {3}"
+  },
+  {
+    "pl": "Eksportowanie {0} dróg do PNG {1} × {2}…",
+    "en": "Exporting {0} roads to PNG {1} × {2}…"
+  },
+  {
+    "pl": "Eksport PNG został przerwany",
+    "en": "PNG export was interrupted"
+  },
+  {
+    "pl": "Wczytaj A…",
+    "en": "Load A…"
+  },
+  {
+    "pl": "Wczytaj B…",
+    "en": "Load B…"
+  },
+  {
+    "pl": "brak pliku",
+    "en": "no file"
+  },
+  {
+    "pl": "Wynik:",
+    "en": "Output:"
+  },
+  {
+    "pl": "Zapisz jako…",
+    "en": "Save as…"
+  },
+  {
+    "pl": "Scal drogi",
+    "en": "Merge roads"
+  },
+  {
+    "pl": "Modele MLOD:",
+    "en": "MLOD models:"
+  },
+  {
+    "pl": "Zastosuj",
+    "en": "Apply"
+  },
+  {
+    "pl": "Folder…",
+    "en": "Folder…"
+  },
+  {
+    "pl": "Plik A",
+    "en": "File A"
+  },
+  {
+    "pl": "Plik B",
+    "en": "File B"
+  },
+  {
+    "pl": "Wynik",
+    "en": "Result"
+  },
+  {
+    "pl": "Tylko zaznaczone drogi",
+    "en": "Selected roads only"
+  },
+  {
+    "pl": "Widoczne po filtrach",
+    "en": "Visible after filtering"
+  },
+  {
+    "pl": "Przezroczyste tło",
+    "en": "Transparent background"
+  },
+  {
+    "pl": "Do eksportu: {0} dróg",
+    "en": "Roads to export: {0}"
+  },
+  {
+    "pl": "Eksportowanie…",
+    "en": "Exporting…"
+  },
+  {
+    "pl": "Eksportuj PNG…",
+    "en": "Export PNG…"
+  },
+  {
+    "pl": "PNG [px]: szerokość",
+    "en": "PNG [px]: width"
+  },
+  {
+    "pl": "wysokość",
+    "en": "height"
+  },
+  {
+    "pl": "Bufor obrazu: {0} MiB",
+    "en": "Image buffer: {0} MiB"
+  },
+  {
+    "pl": "Pełny obszar mapy",
+    "en": "Full map area"
+  },
+  {
+    "pl": "Lewy dolny róg [m]: E",
+    "en": "Bottom left corner [m]: E"
+  },
+  {
+    "pl": "Rozmiar mapy [m]:",
+    "en": "Map size [m]:"
+  },
+  {
+    "pl": "Eksport zachowuje współrzędne mapy, bez marginesów. Północ jest u góry; części poza mapą są przycinane.",
+    "en": "Export preserves map coordinates without margins. North is at the top; parts outside the map are clipped."
+  },
+  {
+    "pl": "Kadr PNG jest dopasowany do eksportowanych dróg. Włącz pełny obszar mapy, aby zachować ich położenie na mapie.",
+    "en": "The PNG frame fits the exported roads. Enable the full map area to preserve their placement on the map."
+  },
+  {
+    "pl": "Lista dróg",
+    "en": "Road list"
+  },
+  {
+    "pl": "Wczytaj plik.",
+    "en": "Load a file."
+  },
+  {
+    "pl": "ID lub nazwa modelu…",
+    "en": "ID or model name…"
+  },
+  {
+    "pl": "Wszystkie typy",
+    "en": "All types"
+  },
+  {
+    "pl": "Długość [m]:",
+    "en": "Length [m]:"
+  },
+  {
+    "pl": "od",
+    "en": "from"
+  },
+  {
+    "pl": "do",
+    "en": "to"
+  },
+  {
+    "pl": "Tylko zaznaczone",
+    "en": "Selected only"
+  },
+  {
+    "pl": "Widoczne: {0} / {1} · zaznaczone: {2}",
+    "en": "Visible: {0} / {1} · selected: {2}"
+  },
+  {
+    "pl": "Zaznacz widoczne",
+    "en": "Select visible"
+  },
+  {
+    "pl": "Wyczyść zaznaczenie",
+    "en": "Clear selection"
+  },
+  {
+    "pl": "Reset filtrów",
+    "en": "Reset filters"
+  },
+  {
+    "pl": "#{0} · {1} · {2} m · {3} części{4}",
+    "en": "#{0} · {1} · {2} m · {3} parts{4}"
+  },
+  {
+    "pl": "{0}\nObrót bazowy: {1}° (TV4P 0x8C)\nMLOD: {2} · nazwy: {3}\n{4}",
+    "en": "{0}\nKey rotation: {1}° (TV4P 0x8C)\nMLOD: {2} · filenames: {3}\n{4}"
+  },
+  {
+    "pl": "Podgląd dróg",
+    "en": "Road preview"
+  },
+  {
+    "pl": "Dopasuj widoczne",
+    "en": "Fit visible"
+  },
+  {
+    "pl": "Dopasuj zaznaczone",
+    "en": "Fit selected"
+  },
+  {
+    "pl": "Kształt i połączenia z MLOD · kółko: zoom · przeciągnij: przesuwanie · kliknij drogę: zaznaczenie",
+    "en": "Shape and connections from MLOD · wheel: zoom · drag: pan · click a road: select"
+  },
+  {
+    "pl": "Wczytaj projekt, aby wyświetlić drogi",
+    "en": "Load a project to display roads"
+  },
+  {
+    "pl": "Brak geometrii w bieżącym filtrze",
+    "en": "No geometry matches the current filter"
+  },
+  {
+    "pl": "#{0} · {1} m · {2} części",
+    "en": "#{0} · {1} m · {2} parts"
+  },
+  {
+    "pl": "Język",
+    "en": "Language"
+  },
+  {
+    "pl": "Scalanie dróg Terrain Builder",
+    "en": "Terrain Builder Road Merger"
+  },
+  {
+    "pl": "drogi.png",
+    "en": "roads.png"
+  },
+  {
+    "pl": "Wybierz folder modeli MLOD",
+    "en": "Choose the MLOD models folder"
+  },
+  {
+    "pl": "Szerokość i wysokość PNG muszą mieścić się w zakresie 128–32768 px",
+    "en": "PNG width and height must be between 128 and 32768 px"
+  },
+  {
+    "pl": "PNG może mieć maksymalnie 268 435 456 pikseli (np. 16384 × 16384)",
+    "en": "PNG may contain at most 268,435,456 pixels (e.g. 16384 × 16384)"
+  },
+  {
+    "pl": "Nieprawidłowe granice mapy",
+    "en": "Invalid map bounds"
+  },
+  {
+    "pl": "Brak geometrii do eksportu",
+    "en": "No geometry to export"
+  },
+  {
+    "pl": "Brak pamięci na obraz PNG o tych wymiarach",
+    "en": "Not enough memory for a PNG image of these dimensions"
+  },
+  {
+    "pl": "Nie można utworzyć obrazu PNG",
+    "en": "Cannot create PNG image"
+  },
+  {
+    "pl": "Przepełnienie przesunięcia MLOD",
+    "en": "MLOD offset overflow"
+  },
+  {
+    "pl": "Niekompletne dane MLOD",
+    "en": "Truncated MLOD"
+  },
+  {
+    "pl": "Zbyt długi tekst MLOD",
+    "en": "MLOD string too long"
+  },
+  {
+    "pl": "Nie można odczytać {0}",
+    "en": "Cannot read {0}"
+  },
+  {
+    "pl": "Nieprawidłowy model {0}",
+    "en": "Invalid model {0}"
+  },
+  {
+    "pl": "Oczekiwano pliku MLOD P3D",
+    "en": "Expected MLOD P3D"
+  },
+  {
+    "pl": "Nieobsługiwana wersja MLOD",
+    "en": "Unsupported MLOD version"
+  },
+  {
+    "pl": "Zbyt wiele LOD w MLOD",
+    "en": "Too many MLOD LODs"
+  },
+  {
+    "pl": "Nieobsługiwany LOD MLOD",
+    "en": "Unsupported MLOD LOD"
+  },
+  {
+    "pl": "Nieobsługiwana wersja P3DM",
+    "en": "Unsupported P3DM version"
+  },
+  {
+    "pl": "MLOD przekracza limity",
+    "en": "MLOD exceeds limits"
+  },
+  {
+    "pl": "Współrzędne wierzchołka nie są skończone",
+    "en": "Non-finite vertex"
+  },
+  {
+    "pl": "Nieobsługiwany wielokąt MLOD",
+    "en": "Unsupported MLOD polygon"
+  },
+  {
+    "pl": "Nieprawidłowy indeks wierzchołka",
+    "en": "Invalid vertex index"
+  },
+  {
+    "pl": "Brak TAGG",
+    "en": "Missing TAGG"
+  },
+  {
+    "pl": "Brak siatki wizualnej w MLOD",
+    "en": "No visual mesh in MLOD"
+  },
+  {
+    "pl": "Brak punktów połączenia LB/PB/LE/PE",
+    "en": "Missing LB/PB/LE/PE connection selections"
+  },
+  {
+    "pl": "Brak parametrów modelu",
+    "en": "Missing model parameters"
+  },
+  {
+    "pl": "Brak długości",
+    "en": "Missing length"
+  },
+  {
+    "pl": "Nieznany format nazwy modelu",
+    "en": "Unknown model naming"
+  },
+  {
+    "pl": "Nieprawidłowa geometria z nazwy pliku",
+    "en": "Invalid filename geometry"
+  },
+  {
+    "pl": "nazwa pliku",
+    "en": "filename"
+  },
+  {
+    "pl": "Brak pliku modelu",
+    "en": "Missing model file"
+  },
+  {
+    "pl": "Brak wejściowego punktu połączenia części",
+    "en": "Missing part entry port"
+  },
+  {
+    "pl": "Brak wyjściowego punktu połączenia części",
+    "en": "Missing part exit port"
+  },
+  {
+    "pl": "Niekompletna wartość TV4P u16",
+    "en": "Truncated TV4P u16"
+  },
+  {
+    "pl": "Niekompletna wartość TV4P u32",
+    "en": "Truncated TV4P u32"
+  },
+  {
+    "pl": "Niekompletna wartość TV4P f64",
+    "en": "Truncated TV4P f64"
+  },
+  {
+    "pl": "Nieprawidłowa lista elementów TV4P",
+    "en": "Invalid TV4P entry list"
+  },
+  {
+    "pl": "Nieprawidłowy znacznik elementu",
+    "en": "Invalid entry marker"
+  },
+  {
+    "pl": "Nieprawidłowy rozmiar elementu",
+    "en": "Invalid entry size"
+  },
+  {
+    "pl": "Niezgodny rozmiar listy TV4P",
+    "en": "TV4P list size mismatch"
+  },
+  {
+    "pl": "Oczekiwano jednego bloku 0x{0}, znaleziono {1}",
+    "en": "Expected one block 0x{0}, found {1}"
+  },
+  {
+    "pl": "Niekompletne pole",
+    "en": "Truncated field"
+  },
+  {
+    "pl": "Niekompletna tablica",
+    "en": "Truncated array"
+  },
+  {
+    "pl": "Nieprawidłowa lista zagnieżdżona",
+    "en": "Invalid nested list"
+  },
+  {
+    "pl": "Nieznany typ pola 0x{0}",
+    "en": "Unknown field type 0x{0}"
+  },
+  {
+    "pl": "Pole wykracza poza element",
+    "en": "Field exceeds entry"
+  },
+  {
+    "pl": "Transformacja drogi {0} nie jest skończona",
+    "en": "Non-finite transform for road {0}"
+  },
+  {
+    "pl": "Brak punktu połączenia odgałęzienia 0x{0}",
+    "en": "Missing branch connection port 0x{0}"
+  },
+  {
+    "pl": "Przepełnienie ID TV4P",
+    "en": "TV4P ID overflow"
+  },
+  {
+    "pl": "Plik wynikowy musi być inny niż A i B",
+    "en": "Output file must differ from A and B"
+  },
+  {
+    "pl": "Niezgodne ustawienia Road Tool 0x{0}",
+    "en": "Incompatible Road Tool settings 0x{0}"
+  },
+  {
+    "pl": "Przepełnienie ID",
+    "en": "ID overflow"
+  },
+  {
+    "pl": "Niejednoznaczne przesunięcie metadanych 0x{0}",
+    "en": "Ambiguous metadata offset 0x{0}"
+  },
+  {
+    "pl": "Przepełnienie przesunięcia metadanych",
+    "en": "Metadata offset overflow"
+  },
+  {
+    "pl": "A: {0} · B: {1} · dodano: {2} · wynik: {3} dróg",
+    "en": "A: {0} · B: {1} · added: {2} · result: {3} roads"
+  },
+  {
+    "pl": "Niezgodność po przebudowaniu bloku",
+    "en": "Roundtrip mismatch"
+  },
+  {
+    "pl": "Przebudowany blok dróg jest identyczny ({0} bajtów)",
+    "en": "Road block roundtrip: identical ({0} bytes)"
+  },
+  {
+    "pl": "0x{0}: {1} elementów",
+    "en": "0x{0}: {1} entries"
+  },
+  {
+    "pl": "Eksport musi trafić do innego pliku niż projekt źródłowy",
+    "en": "Export must use a different file from the source project"
+  },
+  {
+    "pl": "{0} dróg, {1} części, {2} ostrzeżeń geometrii",
+    "en": "{0} roads, {1} parts, {2} geometry warnings"
+  },
+  {
+    "pl": "Długość {0} m; {1} trójkątów; punkty połączenia {2}",
+    "en": "Length {0} m; {1} triangles; ports {2}"
+  },
+  {
+    "pl": "Nieznane polecenie. Użyj --help.",
+    "en": "Unknown command. Use --help."
+  },
+  {
+    "pl": "Język musi być pl lub en",
+    "en": "Language must be pl or en"
+  },
+  {
+    "pl": "Opcjonalny język: --lang pl lub --lang en (przed poleceniem)",
+    "en": "Optional language: --lang pl or --lang en (before the command)"
+  }
+]
