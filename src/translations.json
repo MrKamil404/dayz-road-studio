@@ -482,5 +482,33 @@
   {
     "pl": "Opcjonalny język: --lang pl lub --lang en (przed poleceniem)",
     "en": "Optional language: --lang pl or --lang en (before the command)"
+  },
+  {
+    "pl": "Model P3D nie jest MLOD (format {0}). Podgląd dróg wymaga niezbinaryzowanych modeli MLOD.",
+    "en": "P3D model is not MLOD (format {0}). Road preview requires unbinarized MLOD models."
+  },
+  {
+    "pl": "Folder modeli nie istnieje: {0}. Wybierz folder zawierający modele MLOD.",
+    "en": "Model folder does not exist: {0}. Choose a folder containing MLOD models."
+  },
+  {
+    "pl": "Modele nie są MLOD: {0}. Podgląd tych części jest niedostępny. Wymagane są niezbinaryzowane pliki MLOD P3D.",
+    "en": "Models are not MLOD: {0}. These parts cannot be previewed. Unbinarized MLOD P3D files are required."
+  },
+  {
+    "pl": "Tylko nowe drogi z B",
+    "en": "New roads from B only"
+  },
+  {
+    "pl": "Nowe drogi z B: {0}",
+    "en": "New roads from B: {0}"
+  },
+  {
+    "pl": "Zielone: nowe z B · niebieskie: z A · żółte: zaznaczone",
+    "en": "Green: new from B · blue: from A · yellow: selected"
+  },
+  {
+    "pl": "NOWA",
+    "en": "NEW"
   }
 ]

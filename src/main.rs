@@ -6,7 +6,7 @@ mod tv4p;
 use anyhow::{Result, bail};
 use i18n::Language;
 use std::path::{Path, PathBuf};
-pub const DEFAULT_MODELS: &str = "G:\\dz\\structures\\roads\\parts";
+pub const DEFAULT_MODELS: &str = "P:\\dz\\structures\\roads\\parts";
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let language = if args.first().is_some_and(|s| s == "--lang") {

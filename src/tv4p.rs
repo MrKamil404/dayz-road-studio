@@ -164,6 +164,7 @@ pub struct Road {
     pub rotation_degrees: f64,
     pub parts: usize,
     pub shape: Shape,
+    pub is_new: bool,
 }
 #[derive(Clone, Serialize)]
 pub struct Project {
@@ -205,7 +206,12 @@ fn decode(path: PathBuf, b: &[u8], lib: &mut Library) -> Result<Project> {
         let mut keyports = [None; 4];
         match key {
             Ok(m) => keyports = shape.place(&m, -rotation.rem_euclid(360.).to_radians(), start),
-            Err(err) => shape.warnings.push(format!("{}: {err:#}", model)),
+            Err(err) => {
+                if err.is::<crate::geometry::NonMlod>() {
+                    shape.non_mlod_models.push(model.clone());
+                }
+                shape.warnings.push(format!("{}: {err:#}", model));
+            }
         }
         // These lists are independent chains extending from the key part, not
         // consecutive sections of one polyline: end, begin, left, right.
@@ -250,6 +256,9 @@ fn decode(path: PathBuf, b: &[u8], lib: &mut Library) -> Result<Project> {
                 {
                     Ok(p) => at = Some(p),
                     Err(err) => {
+                        if err.is::<crate::geometry::NonMlod>() {
+                            shape.non_mlod_models.push(name.clone());
+                        }
                         shape.warnings.push(format!("{name}: {err:#}"));
                         break;
                     }
@@ -265,6 +274,7 @@ fn decode(path: PathBuf, b: &[u8], lib: &mut Library) -> Result<Project> {
             rotation_degrees: rotation,
             parts,
             shape,
+            is_new: false,
         });
     }
     Ok(Project { path, roads })
@@ -332,6 +342,13 @@ pub fn same_path(a: &Path, b: &Path) -> bool {
         .eq_ignore_ascii_case(&full(b).to_string_lossy())
 }
 pub fn merge(a: &Path, b: &Path, out: &Path) -> Result<String> {
+    Ok(merge_report(a, b, out)?.message)
+}
+pub struct MergeReport {
+    pub message: String,
+    pub new_ids: HashSet<u32>,
+}
+pub fn merge_report(a: &Path, b: &Path, out: &Path) -> Result<MergeReport> {
     if same_path(a, out) || same_path(b, out) {
         bail!("Plik wynikowy musi być inny niż A i B")
     };
@@ -389,11 +406,13 @@ pub fn merge(a: &Path, b: &Path, out: &Path) -> Result<String> {
         .map(|b| normalized(b))
         .collect::<Result<HashSet<_>>>()?;
     let mut added = 0;
+    let mut new_ids = HashSet::new();
     for e in &rb.entries {
         let body = &b[e.start..e.start + e.len];
         if seen.insert(normalized(body)?) {
             let id = new_id(&mut used, &mut road_state, 992)?;
             bodies.push(reid(body, id, &mut used, &mut part_state)?);
+            new_ids.insert(id);
             added += 1
         }
     }
@@ -417,13 +436,16 @@ pub fn merge(a: &Path, b: &Path, out: &Path) -> Result<String> {
         }
     }
     fs::write(out, &result)?;
-    Ok(format!(
-        "A: {} · B: {} · dodano: {} · wynik: {} dróg",
-        ra.entries.len(),
-        rb.entries.len(),
-        added,
-        bodies.len()
-    ))
+    Ok(MergeReport {
+        message: format!(
+            "A: {} · B: {} · dodano: {} · wynik: {} dróg",
+            ra.entries.len(),
+            rb.entries.len(),
+            added,
+            bodies.len()
+        ),
+        new_ids,
+    })
 }
 pub fn roundtrip(path: &Path, language: crate::i18n::Language) -> Result<()> {
     let b = fs::read(path)?;

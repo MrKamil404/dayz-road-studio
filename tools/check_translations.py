@@ -41,7 +41,7 @@ for filename in ('gui.rs', 'main.rs', 'tv4p.rs', 'render.rs', 'geometry.rs'):
             continue
         if filename != 'gui.rs':
             prefix = source[max(0, match.start() - 90):match.start()]
-            if not re.search(r'(bail!|anyhow!|context|format!|println!)\s*\([^";]*$', prefix):
+            if not re.search(r'(bail!|anyhow!|context|format!|println!|write!)\s*\([^";]*$', prefix):
                 continue
             if text.startswith('GUI:'):
                 continue

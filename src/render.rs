@@ -52,9 +52,11 @@ impl View {
         ]
     }
 }
-pub fn color(selected: bool, any_selected: bool) -> [u8; 4] {
+pub fn color(selected: bool, any_selected: bool, is_new: bool) -> [u8; 4] {
     if selected {
         [255, 216, 70, 255]
+    } else if is_new {
+        [80, 225, 154, 255]
     } else if any_selected {
         [93, 108, 128, 255]
     } else {
@@ -132,7 +134,7 @@ pub fn png_in_bounds(
             if marked != highlighted {
                 continue;
             }
-            let col = color(marked, any);
+            let col = color(marked, any, r.is_new);
             for t in &r.shape.triangles {
                 triangle(&mut img, t.map(pixel), col)
             }

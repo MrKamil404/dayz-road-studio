@@ -80,7 +80,29 @@ pub fn read_mlod(path: &Path) -> Result<Model> {
     let bytes = fs::read(path).with_context(|| format!("Cannot read {}", path.display()))?;
     parse_mlod(&bytes).with_context(|| format!("Invalid model {}", path.display()))
 }
+#[derive(Debug)]
+pub struct NonMlod {
+    format: String,
+}
+impl std::fmt::Display for NonMlod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "P3D model is not MLOD (format {}). Road preview requires unbinarized MLOD models.",
+            self.format
+        )
+    }
+}
+impl std::error::Error for NonMlod {}
 fn parse_mlod(bytes: &[u8]) -> Result<Model> {
+    if !bytes.starts_with(b"MLOD") {
+        let format = if bytes.starts_with(b"ODOL") {
+            "ODOL".to_owned()
+        } else {
+            format!("{:02X?}", &bytes[..bytes.len().min(4)])
+        };
+        return Err(NonMlod { format }.into());
+    }
     let mut r = Reader { b: bytes, p: 0 };
     if r.bytes(4)? != b"MLOD" {
         bail!("Expected MLOD P3D")
@@ -459,10 +481,13 @@ impl Library {
             return Ok(m.clone());
         };
         let requested = PathBuf::from(name);
-        let path = if requested.is_absolute() && requested.exists() {
+        let configured = self.root.join(file);
+        let path = if configured.exists() {
+            configured
+        } else if requested.is_absolute() && requested.exists() {
             requested
         } else {
-            self.root.join(file)
+            configured
         };
         let model = if path.exists() {
             read_mlod(&path)?
@@ -481,6 +506,7 @@ pub struct Shape {
     pub mlod_parts: usize,
     pub filename_parts: usize,
     pub warnings: Vec<String>,
+    pub non_mlod_models: Vec<String>,
 }
 impl Shape {
     pub fn place(&mut self, m: &Model, angle: f64, translation: Point) -> [Option<Port>; 4] {

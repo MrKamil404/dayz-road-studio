@@ -17,6 +17,8 @@ struct Dataset {
     min_length: String,
     max_length: String,
     only_selected: bool,
+    only_new: bool,
+    merged_result: bool,
     zoom: f64,
     pan: Vec2,
     focus: Option<Bounds>,
@@ -35,6 +37,7 @@ impl Dataset {
                 .map(|m| r.shape.length <= m)
                 .unwrap_or(true)
             && (!self.only_selected || self.selected.contains(&r.index))
+            && (!self.only_new || r.is_new)
     }
     fn reset_view(&mut self) {
         self.zoom = 1.;
@@ -121,7 +124,29 @@ impl App {
     }
     fn load(&mut self, index: usize, path: PathBuf) {
         match tv4p::load(&path, &mut self.library) {
-            Ok(p) => {
+            Ok(mut p) => {
+                // Re-reading models must preserve provenance from the last merge.
+                let previous = &self.datasets[index];
+                let same_result = index == 2
+                    && previous.merged_result
+                    && previous
+                        .project
+                        .as_ref()
+                        .is_some_and(|old| tv4p::same_path(&old.path, &p.path));
+                if same_result {
+                    let ids: BTreeSet<_> = previous
+                        .project
+                        .as_ref()
+                        .unwrap()
+                        .roads
+                        .iter()
+                        .filter(|r| r.is_new)
+                        .map(|r| r.id)
+                        .collect();
+                    for road in &mut p.roads {
+                        road.is_new = ids.contains(&road.id);
+                    }
+                }
                 let n = p.roads.len();
                 let missing = p
                     .roads
@@ -130,6 +155,7 @@ impl App {
                     .count();
                 self.datasets[index] = Dataset {
                     project: Some(p),
+                    merged_result: same_result,
                     zoom: 1.,
                     ..Default::default()
                 };
@@ -146,11 +172,16 @@ impl App {
         let b = self.datasets[1].project.as_ref().map(|p| p.path.clone());
         if let (Some(a), Some(b)) = (a, b) {
             let out = PathBuf::from(&self.output);
-            match tv4p::merge(&a, &b, &out) {
-                Ok(m) => {
+            match tv4p::merge_report(&a, &b, &out) {
+                Ok(report) => {
                     self.load(2, out);
                     if !self.error {
-                        self.status(Ok(m))
+                        let ds = &mut self.datasets[2];
+                        ds.merged_result = true;
+                        for road in &mut ds.project.as_mut().unwrap().roads {
+                            road.is_new = report.new_ids.contains(&road.id);
+                        }
+                        self.status(Ok(report.message))
                     }
                 }
                 Err(e) => self.status(Err(e)),
@@ -397,6 +428,20 @@ impl eframe::App for App {
                     lang.tr(&self.message),
                 );
             });
+            if !PathBuf::from(&self.model_root).is_dir() {
+                ui.colored_label(Color32::YELLOW, lang.tr(&format!(
+                    "Folder modeli nie istnieje: {}. Wybierz folder zawierający modele MLOD.", self.model_root
+                )));
+            }
+            if let Some(project) = &self.datasets[self.active].project {
+                let invalid: BTreeSet<_> = project.roads.iter()
+                    .flat_map(|r| r.shape.non_mlod_models.iter()).collect();
+                if !invalid.is_empty() {
+                    ui.colored_label(Color32::LIGHT_RED, lang.tr(&format!(
+                        "Modele nie są MLOD: {}. Podgląd tych części jest niedostępny. Wymagane są niezbinaryzowane pliki MLOD P3D.", invalid.len()
+                    ))).on_hover_text(invalid.into_iter().cloned().collect::<Vec<_>>().join("\n"));
+                }
+            }
         });
         egui::TopBottomPanel::bottom("export").show(ctx, |ui| {
             ui.horizontal_wrapped(|ui| {
@@ -510,6 +555,14 @@ impl eframe::App for App {
                 changed |= ui
                     .checkbox(&mut ds.only_selected, lang.tr("Tylko zaznaczone"))
                     .changed();
+                if ds.merged_result {
+                    changed |= ui
+                        .checkbox(&mut ds.only_new, lang.tr("Tylko nowe drogi z B"))
+                        .changed();
+                    let added = p.roads.iter().filter(|r| r.is_new).count();
+                    ui.label(lang.tr(&format!("Nowe drogi z B: {added}")));
+                    ui.small(lang.tr("Zielone: nowe z B · niebieskie: z A · żółte: zaznaczone"));
+                }
                 if changed {
                     ds.reset_view()
                 }
@@ -541,6 +594,7 @@ impl eframe::App for App {
                     ds.min_length.clear();
                     ds.max_length.clear();
                     ds.only_selected = false;
+                    ds.only_new = false;
                     ds.reset_view()
                 }
                 ui.separator();
@@ -561,6 +615,12 @@ impl eframe::App for App {
                             r.parts,
                             warning
                         ));
+                        let label = if r.is_new {
+                            egui::RichText::new(format!("{} · {label}", lang.tr("NOWA")))
+                                .color(Color32::from_rgb(80, 225, 154))
+                        } else {
+                            egui::RichText::new(label)
+                        };
                         let response = ui.selectable_label(marked, label);
                         let warnings = r.shape.warnings.join("\n");
                         let tip = lang.tr(&format!(
@@ -663,7 +723,7 @@ fn map(ui: &mut egui::Ui, ds: &mut Dataset, lang: Language) {
             if marked != selected {
                 continue;
             }
-            let c = render::color(selected, any);
+            let c = render::color(selected, any, r.is_new);
             let color = Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]);
             let mut mesh = egui::Mesh::default();
             for t in &r.shape.triangles {
