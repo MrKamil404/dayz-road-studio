@@ -39,9 +39,37 @@ The complete application translation catalog is in `src/translations.json`. JSON
 
 Run `python tools/check_translations.py` to audit catalog coverage and message placeholders.
 
-## Getting started
+## GUI workflow
 
-Run `tv4p_merge_roads.exe`. Load projects A and B, choose the output file and merge the roads. The A, B and Result tabs have separate road lists, selections and view settings.
+### Merge projects
+
+1. Back up both input projects. Use **A** as the main project and **B** as the road donor. Both projects must have matching Road Tool road type and junction definitions.
+2. Run `tv4p_merge_roads.exe` without a command. For the English interface, run `.\tv4p_merge_roads.exe --lang en`, or use the language selector in the bottom-right corner.
+3. Check the **MLOD** folder in the top bar. Its default is `P:\dz\structures\roads\parts`. Use the `…` button beside this field to choose a folder, or edit the path and click **Apply**. Review any model warnings.
+4. Click **A…** to load the main project, then **B…** to load the donor. Use **File A** and **File B** to inspect their road lists and previews.
+5. Enter an output path in **Output**, or use the `…` button beside it (**Save as** in the tooltip). Choose a file different from both inputs.
+6. Click **Merge roads**. On success, the application switches to **Result** and shows the merge counts. Roads actually added from B have a **NEW** label and are green; roads skipped as duplicates are not marked as new.
+7. Inspect the result. Use **New roads from B only** to isolate added roads, then optionally **Select visible** to select them. Selected roads are yellow.
+8. Open the saved result in Terrain Builder and check the roads and the rest of the project before adopting it as your new main project. All non-road content comes from A.
+
+> [!NOTE]
+> If merging reports incompatible Road Tool settings, resolve the definition differences in Terrain Builder before trying again. NEW markers describe the current GUI merge; they are not stored in the saved TV4P file.
+
+### Export a PNG
+
+1. Choose **File A**, **File B** or **Result**. Export uses the active tab, so loading both inputs or merging is not required just to preview or export one project.
+2. Filter the road list if needed. Click rows or roads on the map to select them, or click **Select visible**.
+3. In the bottom bar, choose **Selected roads only** or **Visible after filtering** from the PNG scope menu. Its compact label is **Selected** or **Visible**. Selected scope includes selected roads hidden by filters; visible scope includes all roads that pass the current filters.
+4. Set the two **px** fields to the image width and height. The **15360²** button sets both to 15360. Enable **Alpha** for a transparent background.
+5. Enable **Map** to preserve placement on the full map. Set **E** and **N** to the bottom-left world coordinates and the two **m** fields to the map width and height. For the default map, use E=200000, N=0 and 15360 × 15360 m. Disable **Map** to fit the exported roads instead.
+6. Check the road count beside the export button. **Export PNG** is enabled only when this scope contains roads and another export is not running. Choose the PNG output file and wait for the success message; the large-image export runs in the background.
+
+> [!NOTE]
+> Image resolution and map size are separate settings. PNG 15360 × 15360 px over a 15360 × 15360 m map gives 1 pixel per metre. Map export clips geometry outside the configured map bounds.
+
+### Interface reference
+
+The A, B and Result tabs have separate road lists, selections and view settings.
 
 Project controls remain at the top, the road list on the left, the preview in the centre and PNG export settings at the bottom. Both control bars are compact and keep their settings on one line when there is enough space; settings wrap on narrower windows. The language selector stays in the bottom-right corner. Short labels and buttons provide full descriptions in tooltips. The application theme is unchanged.
 
@@ -73,16 +101,67 @@ The merger checks road type and junction definitions (`0x88`, `0x89`), skips ide
 
 ## Command line
 
+### CLI workflow
+
+Run these PowerShell commands from the directory containing the executable. Replace the example filenames with your actual projects. Back up the inputs first, and choose an existing output directory.
+
+1. Check the program version and available syntax. Optionally inspect both projects' Road Tool definitions; the merge command also checks their compatibility automatically.
+
+```powershell
+.\tv4p_merge_roads.exe --lang en --version
+.\tv4p_merge_roads.exe --lang en --help
+.\tv4p_merge_roads.exe --lang en types A.tv4p
+.\tv4p_merge_roads.exe --lang en types B.tv4p
+```
+
+2. Merge donor B's roads into base A. The output must differ from both inputs. Stop if the command fails; do not continue exporting a result left from an earlier run.
+
 ```powershell
 .\tv4p_merge_roads.exe --lang en merge A.tv4p B.tv4p output.tv4p
-.\tv4p_merge_roads.exe --lang en png map.tv4p roads.png
-.\tv4p_merge_roads.exe --lang en export map.tv4p roads.json
-.\tv4p_merge_roads.exe --lang en roundtrip map.tv4p
-.\tv4p_merge_roads.exe --lang en types map.tv4p
+if ($LASTEXITCODE -ne 0) { throw "Merge failed; check the error above." }
+```
+
+3. Optionally check that the result's road block can be rebuilt byte-for-byte, then export road geometry to JSON and create an overview PNG. Pass a model folder as the last argument to `export` and `png`, or omit it to use the default folder.
+
+```powershell
+.\tv4p_merge_roads.exe --lang en roundtrip output.tv4p
+if ($LASTEXITCODE -ne 0) { throw "Road block roundtrip failed." }
+
+.\tv4p_merge_roads.exe --lang en export output.tv4p roads.json "P:\dz\structures\roads\parts"
+if ($LASTEXITCODE -ne 0) { throw "JSON export failed." }
+
+.\tv4p_merge_roads.exe --lang en png output.tv4p roads.png "P:\dz\structures\roads\parts"
+if ($LASTEXITCODE -ne 0) { throw "PNG export failed." }
+```
+
+4. Review the reported geometry warnings and exported overview. To diagnose an individual road part, inspect its MLOD model:
+
+```powershell
 .\tv4p_merge_roads.exe --lang en inspect-p3d "P:\dz\structures\roads\parts\asf2_30 25.p3d"
 ```
 
-`png` and `export` accept an optional model folder as their last argument. CLI PNG export covers all roads at 2048 × 1536 px.
+5. Open `output.tv4p` in Terrain Builder and check the result before replacing your main project. `roundtrip` checks the road block only; it is not a validation of the entire project or its geometry.
+
+> [!NOTE]
+> CLI `png` exports **all roads at 2048 × 1536 px**, with an opaque background and a frame fitted to the roads. CLI currently has no options for road selection, filtering, custom resolution, transparent background or fixed map bounds. Use the GUI for selected-road exports and map-aligned PNGs such as 15360 × 15360.
+
+> [!CAUTION]
+> Output and export commands can overwrite existing destination files. Keep backups and use fresh output filenames. Successful geometry export can still report warnings and contain an incomplete preview; inspect those warnings before relying on it.
+
+### Command reference
+
+Put optional `--lang en` or `--lang pl` **before** the command. Exit code 0 indicates success; errors return exit code 1. Run without a command to open the GUI.
+
+| Command | Arguments | Purpose |
+| --- | --- | --- |
+| `--version` / `-V` | None | Print the application version. |
+| `--help` / `help` | None | Show CLI syntax. |
+| `merge` | `A.tv4p B.tv4p output.tv4p` | Add B's roads to A; keep other content from A. |
+| `types` | `input.tv4p` | List road type and junction definition entries. |
+| `roundtrip` | `input.tv4p` | Check byte-for-byte rebuilding of the road block without modifying the input. |
+| `export` | `input.tv4p output.json [models-folder]` | Export all roads and their geometry to JSON. |
+| `png` | `input.tv4p output.png [models-folder]` | Export an overview PNG of all roads. |
+| `inspect-p3d` | `model.p3d` | Read model length, mesh triangle count and connection ports. |
 
 ## Building
 
