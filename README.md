@@ -2,9 +2,7 @@
 
 A Windows application for merging roads from `.tv4p` projects, with geometry previews, filtering, selection and PNG export. The current application is written in Rust. The old Python script is retained as reference material.
 
-<p align="center">
-  <img src="[assets/app-icon.png](https://raw.githubusercontent.com/MrKamil404/Terrain-Builder-Road-Merger/refs/heads/main/images/prev1.png)" alt="tv4p_merge_roads 1.1 interace" width="512">
-</p>
+[tv4p_merge_roads 1.1 interace](https://raw.githubusercontent.com/MrKamil404/Terrain-Builder-Road-Merger/refs/heads/main/images/prev1.png)
 
 > [!CAUTION]
 > Always keep a separate backup copy of your Terrain Builder project before merging roads or saving a result. Keep the original input projects and write the merged result to a different file.
