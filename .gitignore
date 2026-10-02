@@ -24,3 +24,5 @@ env/
 *.bak
 *.log
 tv4p_merge_roads.exe
+/target/
+/preview_roads.png
