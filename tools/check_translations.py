@@ -27,6 +27,7 @@ technical = {
     'TV4P', 'tv4p', 'output.tv4p', 'PNG', 'PNG:', 'png', 'export', 'scope',
     'roads', 'road_kind', 'E', 'N', '100 m', '../app_icon.png',
     'Terrain Builder Road Merger', '  {} 0x{:02X} {}',
+    'A…', 'B…', 'MLOD', 'px', 'm',
 }
 missing = []
 for filename in ('gui.rs', 'main.rs', 'tv4p.rs', 'render.rs', 'geometry.rs'):

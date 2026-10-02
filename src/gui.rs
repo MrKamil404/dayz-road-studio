@@ -304,101 +304,45 @@ impl eframe::App for App {
             }
         }
         egui::TopBottomPanel::top("controls").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(lang.tr("Język"));
-                let previous = self.language;
-                egui::ComboBox::from_id_salt("language")
-                    .selected_text(if self.language == Language::Polish {
-                        "Polski"
-                    } else {
-                        "English"
-                    })
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut self.language, Language::Polish, "Polski");
-                        ui.selectable_value(&mut self.language, Language::English, "English");
-                    });
-                if previous != self.language {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Title(
-                        format!("{} {}", self.language.tr("Scalanie dróg Terrain Builder"), crate::version()),
-                    ));
-                    ctx.request_repaint();
-                }
-            });
-            ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing = Vec2::new(6., 4.);
+            ui.horizontal_wrapped(|ui| {
                 for i in 0..2 {
-                    if ui
-                        .button(if i == 0 {
-                            lang.tr("Wczytaj A…")
-                        } else {
-                            lang.tr("Wczytaj B…")
-                        })
-                        .clicked()
-                    {
-                        if let Some(p) = FileDialog::new()
-                            .set_title(lang.tr(if i == 0 {
-                                "Wczytaj A…"
-                            } else {
-                                "Wczytaj B…"
-                            }))
-                            .add_filter("Terrain Builder", &["tv4p"])
-                            .pick_file()
-                        {
-                            self.load(i, p)
-                        }
+                    if ui.button(if i == 0 { "A…" } else { "B…" })
+                        .on_hover_text(lang.tr(if i == 0 { "Wczytaj A…" } else { "Wczytaj B…" })).clicked() {
+                        if let Some(path) = FileDialog::new()
+                            .set_title(lang.tr(if i == 0 { "Wczytaj A…" } else { "Wczytaj B…" }))
+                            .add_filter("Terrain Builder", &["tv4p"]).pick_file() { self.load(i, path); }
                     }
-                    let label = self.datasets[i]
-                        .project
-                        .as_ref()
-                        .and_then(|p| p.path.file_name())
-                        .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| lang.tr("brak pliku").into());
-                    ui.label(label);
-                    ui.separator();
+                    let label = self.datasets[i].project.as_ref().and_then(|p| p.path.file_name())
+                        .map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| lang.tr("brak pliku"));
+                    let path = self.datasets[i].project.as_ref().map(|p| p.path.display().to_string()).unwrap_or_default();
+                    ui.add_sized([95., 22.], egui::Label::new(label).truncate()).on_hover_text(path);
                 }
-            });
-            ui.horizontal(|ui| {
+                ui.separator();
                 ui.label(lang.tr("Wynik:"));
-                ui.add(egui::TextEdit::singleline(&mut self.output).desired_width(400.));
-                if ui.button(lang.tr("Zapisz jako…")).clicked() {
-                    if let Some(p) = FileDialog::new()
-                        .set_title(lang.tr("Zapisz jako…"))
-                        .add_filter("TV4P", &["tv4p"])
-                        .set_file_name("output.tv4p")
-                        .save_file()
-                    {
-                        self.output = p.to_string_lossy().into()
+                ui.add_sized([170., 22.], egui::TextEdit::singleline(&mut self.output)).on_hover_text(&self.output);
+                if ui.button("…").on_hover_text(lang.tr("Zapisz jako…")).clicked() {
+                    if let Some(path) = FileDialog::new().set_title(lang.tr("Zapisz jako…"))
+                        .add_filter("TV4P", &["tv4p"]).set_file_name("output.tv4p").save_file() {
+                        self.output = path.to_string_lossy().into();
                     }
                 }
-                if ui
-                    .add_enabled(
-                        self.datasets[0].project.is_some() && self.datasets[1].project.is_some(),
-                        egui::Button::new(lang.tr("Scal drogi")),
-                    )
-                    .clicked()
-                {
-                    self.merge()
-                }
-            });
-            ui.horizontal(|ui| {
-                ui.label(lang.tr("Modele MLOD:"));
-                ui.add(egui::TextEdit::singleline(&mut self.model_root).desired_width(400.));
+                if ui.add_enabled(self.datasets[0].project.is_some() && self.datasets[1].project.is_some(),
+                    egui::Button::new(lang.tr("Scal drogi"))).clicked() { self.merge(); }
+                ui.separator();
+                ui.label("MLOD").on_hover_text(lang.tr("Modele MLOD:"));
+                ui.add_sized([190., 22.], egui::TextEdit::singleline(&mut self.model_root)).on_hover_text(&self.model_root);
                 let mut reload = ui.button(lang.tr("Zastosuj")).clicked();
-                if ui.button(lang.tr("Folder…")).clicked() {
-                    if let Some(p) = FileDialog::new()
-                        .set_title(lang.tr("Wybierz folder modeli MLOD"))
-                        .pick_folder()
-                    {
-                        self.model_root = p.to_string_lossy().into();
-                        reload = true
+                if ui.button("…").on_hover_text(lang.tr("Folder…")).clicked() {
+                    if let Some(path) = FileDialog::new().set_title(lang.tr("Wybierz folder modeli MLOD")).pick_folder() {
+                        self.model_root = path.to_string_lossy().into(); reload = true;
                     }
                 }
                 if reload {
                     self.library = Library::new(PathBuf::from(&self.model_root));
                     let active = self.active;
                     for i in 0..3 {
-                        if let Some(p) = self.datasets[i].project.as_ref().map(|p| p.path.clone()) {
-                            self.load(i, p)
-                        }
+                        if let Some(path) = self.datasets[i].project.as_ref().map(|p| p.path.clone()) { self.load(i, path); }
                     }
                     self.active = active;
                 }
@@ -444,61 +388,69 @@ impl eframe::App for App {
             }
         });
         egui::TopBottomPanel::bottom("export").show(ctx, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                ui.label("PNG:");
-                egui::ComboBox::from_id_salt("scope")
-                    .selected_text(if self.png_selected {
-                        lang.tr("Tylko zaznaczone drogi")
-                    } else {
-                        lang.tr("Widoczne po filtrach")
-                    })
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut self.png_selected, false, lang.tr("Widoczne po filtrach"));
-                        ui.selectable_value(&mut self.png_selected, true, lang.tr("Tylko zaznaczone drogi"));
-                    });
-                ui.checkbox(&mut self.transparent, lang.tr("Przezroczyste tło"));
-                let count = self.datasets[self.active].project.as_ref().map(|p| p.roads.iter().filter(|r| {
-                    if self.png_selected { self.datasets[self.active].selected.contains(&r.index) }
-                    else { self.datasets[self.active].accepts(r) }
-                }).count()).unwrap_or(0);
-                ui.label(lang.tr(&format!("Do eksportu: {count} dróg")));
-                if ui
-                    .add_enabled(
-                        count > 0 && self.png_job.is_none(),
-                        egui::Button::new(if self.png_job.is_some() { lang.tr("Eksportowanie…") } else { lang.tr("Eksportuj PNG…") }),
-                    )
-                    .clicked()
-                {
-                    self.export_png()
-                }
-            });
-            ui.horizontal_wrapped(|ui| {
-                ui.label(lang.tr("PNG [px]: szerokość"));
-                ui.add(egui::DragValue::new(&mut self.png_width).range(128..=32768));
-                ui.label(lang.tr("wysokość"));
-                ui.add(egui::DragValue::new(&mut self.png_height).range(128..=32768));
-                if ui.small_button("15360 × 15360").clicked() {
-                    self.png_width = 15360; self.png_height = 15360;
-                }
-                ui.label(lang.tr(&format!("Bufor obrazu: {:.0} MiB", self.png_width as f64 * self.png_height as f64 * 4. / 1048576.)));
-            });
-            ui.horizontal_wrapped(|ui| {
-                ui.checkbox(&mut self.full_map, lang.tr("Pełny obszar mapy"));
-                ui.add_enabled_ui(self.full_map, |ui| {
-                    ui.label(lang.tr("Lewy dolny róg [m]: E"));
-                    ui.add(egui::DragValue::new(&mut self.map_east).speed(1.));
-                    ui.label("N");
-                    ui.add(egui::DragValue::new(&mut self.map_north).speed(1.));
-                    ui.label(lang.tr("Rozmiar mapy [m]:"));
-                    ui.add(egui::DragValue::new(&mut self.map_width).range(1.0..=1_000_000.0).speed(1.));
+            ui.spacing_mut().item_spacing = Vec2::new(5., 3.);
+            let start = ui.cursor().min;
+            let width = ui.available_width();
+            // Reserve a fixed slot at the right; wrapped settings cannot move
+            // the language selector away from the bottom-right corner.
+            let settings_width = (width - 165.).max(100.);
+            let settings = ui.allocate_ui_with_layout(Vec2::new(settings_width, 24.),
+                egui::Layout::top_down(egui::Align::Min), |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label("PNG:");
+                    egui::ComboBox::from_id_salt("scope").width(110.)
+                        .selected_text(lang.tr(if self.png_selected { "Zaznaczone" } else { "Widoczne" }))
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut self.png_selected, true, lang.tr("Tylko zaznaczone drogi"));
+                            ui.selectable_value(&mut self.png_selected, false, lang.tr("Widoczne po filtrach"));
+                        });
+                    ui.checkbox(&mut self.transparent, lang.tr("Alfa")).on_hover_text(lang.tr("Przezroczyste tło"));
+                    ui.label("px").on_hover_text(lang.tr("Rozdzielczość PNG [px]"));
+                    ui.add_sized([54., 22.], egui::DragValue::new(&mut self.png_width).range(128..=32768));
                     ui.label("×");
-                    ui.add(egui::DragValue::new(&mut self.map_height).range(1.0..=1_000_000.0).speed(1.));
+                    ui.add_sized([54., 22.], egui::DragValue::new(&mut self.png_height).range(128..=32768));
+                    if ui.small_button("15360²").on_hover_text("15360 × 15360").clicked() { self.png_width = 15360; self.png_height = 15360; }
+                    ui.separator();
+                    ui.checkbox(&mut self.full_map, lang.tr("Mapa")).on_hover_text(lang.tr(if self.full_map {
+                        "Eksport zachowuje współrzędne mapy, bez marginesów. Północ jest u góry; części poza mapą są przycinane."
+                    } else {
+                        "Kadr PNG jest dopasowany do eksportowanych dróg. Włącz pełny obszar mapy, aby zachować ich położenie na mapie."
+                    }));
+                    let origin_tip = lang.tr("Lewy dolny róg [m]");
+                    ui.add_enabled(self.full_map, egui::Label::new("E")).on_hover_text(&origin_tip);
+                    ui.add_enabled(self.full_map, egui::DragValue::new(&mut self.map_east).speed(1.).min_decimals(0).max_decimals(2)).on_hover_text(&origin_tip);
+                    ui.add_enabled(self.full_map, egui::Label::new("N")).on_hover_text(&origin_tip);
+                    ui.add_enabled(self.full_map, egui::DragValue::new(&mut self.map_north).speed(1.).min_decimals(0).max_decimals(2)).on_hover_text(&origin_tip);
+                    ui.add_enabled(self.full_map, egui::Label::new("m")).on_hover_text(lang.tr("Rozmiar mapy [m]:"));
+                    ui.add_enabled(self.full_map, egui::DragValue::new(&mut self.map_width).range(1.0..=1_000_000.0).speed(1.).max_decimals(2));
+                    ui.label("×");
+                    ui.add_enabled(self.full_map, egui::DragValue::new(&mut self.map_height).range(1.0..=1_000_000.0).speed(1.).max_decimals(2));
+                    ui.separator();
+                    let count = self.datasets[self.active].project.as_ref().map(|p| p.roads.iter().filter(|r| {
+                        if self.png_selected { self.datasets[self.active].selected.contains(&r.index) }
+                        else { self.datasets[self.active].accepts(r) }
+                    }).count()).unwrap_or(0);
+                    if ui.add_enabled(count > 0 && self.png_job.is_none(),
+                        egui::Button::new(lang.tr(if self.png_job.is_some() { "Eksportowanie…" } else { "Eksportuj PNG…" })))
+                        .on_hover_text(lang.tr(&format!("Bufor obrazu: {:.0} MiB", self.png_width as f64 * self.png_height as f64 * 4. / 1048576.))).clicked() { self.export_png(); }
+                    ui.label(count.to_string()).on_hover_text(lang.tr(&format!("Do eksportu: {count} dróg")));
                 });
             });
-            ui.small(if self.full_map {
-                lang.tr("Eksport zachowuje współrzędne mapy, bez marginesów. Północ jest u góry; części poza mapą są przycinane.")
-            } else {
-                lang.tr("Kadr PNG jest dopasowany do eksportowanych dróg. Włącz pełny obszar mapy, aby zachować ich położenie na mapie.")
+            let bottom = start.y + settings.response.rect.height().max(24.);
+            let language_rect = egui::Rect::from_min_size(Pos2::new(start.x + width - 160., bottom - 24.), Vec2::new(160., 24.));
+            ui.scope_builder(egui::UiBuilder::new().max_rect(language_rect).layout(egui::Layout::right_to_left(egui::Align::Center)), |ui| {
+                let previous = self.language;
+                egui::ComboBox::from_id_salt("language").width(85.)
+                    .selected_text(if self.language == Language::Polish { "Polski" } else { "English" })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut self.language, Language::Polish, "Polski");
+                        ui.selectable_value(&mut self.language, Language::English, "English");
+                    });
+                ui.label(lang.tr("Język"));
+                if previous != self.language {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!("{} {}", self.language.tr("Scalanie dróg Terrain Builder"), crate::version())));
+                    ctx.request_repaint();
+                }
             });
         });
         let ds = &mut self.datasets[self.active];
@@ -645,7 +597,7 @@ impl eframe::App for App {
     }
 }
 fn map(ui: &mut egui::Ui, ds: &mut Dataset, lang: Language) {
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         ui.heading(lang.tr("Podgląd dróg"));
         if ui.button(lang.tr("Dopasuj widoczne")).clicked() {
             ds.reset_view()

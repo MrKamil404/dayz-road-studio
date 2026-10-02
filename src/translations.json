@@ -510,5 +510,29 @@
   {
     "pl": "NOWA",
     "en": "NEW"
+  },
+  {
+    "pl": "Rozdzielczość PNG [px]",
+    "en": "PNG resolution [px]"
+  },
+  {
+    "pl": "Lewy dolny róg [m]",
+    "en": "Bottom left corner [m]"
+  },
+  {
+    "pl": "Zaznaczone",
+    "en": "Selected"
+  },
+  {
+    "pl": "Widoczne",
+    "en": "Visible"
+  },
+  {
+    "pl": "Alfa",
+    "en": "Alpha"
+  },
+  {
+    "pl": "Mapa",
+    "en": "Map"
   }
 ]
