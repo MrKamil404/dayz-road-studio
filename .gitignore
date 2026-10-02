@@ -1,4 +1,4 @@
-# Python bytecode and caches
+# Optional Python translation audit: bytecode and caches
 __pycache__/
 *.py[cod]
 *$py.class
@@ -7,12 +7,6 @@ __pycache__/
 .venv/
 venv/
 env/
-
-# PyInstaller build artifacts
-/build/
-/dist/
-*.spec
-.uv-cache/
 
 # Local Terrain Builder projects and generated exports
 *.tv4p

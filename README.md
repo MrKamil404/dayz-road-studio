@@ -1,6 +1,6 @@
 # Terrain Builder Road Merger 1.1 — Rust
 
-A Windows application for merging roads from `.tv4p` projects, with geometry previews, filtering, selection and PNG export. The current application is written in Rust. The old Python script is retained as reference material.
+A Windows application for merging roads from `.tv4p` projects, with geometry previews, filtering, selection and PNG export. The application is written in Rust.
 
 > [!CAUTION]
 > Always keep a separate backup copy of your Terrain Builder project before merging roads or saving a result. Keep the original input projects and write the merged result to a different file.
@@ -37,7 +37,7 @@ Use `--lang` before a command to choose the GUI or CLI language:
 
 The complete application translation catalog is in `src/translations.json`. JSON exports retain stable field names; warning text uses the selected language.
 
-Run `python tools/check_translations.py` to audit catalog coverage and message placeholders.
+Run `python tools/check_translations.py` to audit catalog coverage and message placeholders. Python is optional and is only needed for this development utility; running or building the application does not require it.
 
 ## GUI workflow
 
