@@ -1,0 +1,1686 @@
+[
+  {
+    "pl": "Wczytaj projekt A lub B.",
+    "en": "Load project A or B."
+  },
+  {
+    "pl": "Wczytano {0} dróg · problemy geometrii: {1}",
+    "en": "Loaded {0} roads · geometry issues: {1}"
+  },
+  {
+    "pl": "Wymiary mapy muszą być dodatnie, a współrzędne skończone",
+    "en": "Map dimensions must be positive and coordinates must be finite"
+  },
+  {
+    "pl": "Brak dróg w wybranym zakresie eksportu",
+    "en": "No roads in the selected export scope"
+  },
+  {
+    "pl": "Eksport PNG musi mieć inną ścieżkę niż wczytany projekt",
+    "en": "PNG export must use a different path from the loaded project"
+  },
+  {
+    "pl": "PNG: {0} dróg · {1} × {2} px · {3}",
+    "en": "PNG: {0} roads · {1} × {2} px · {3}"
+  },
+  {
+    "pl": "Eksportowanie {0} dróg do PNG {1} × {2}…",
+    "en": "Exporting {0} roads to PNG {1} × {2}…"
+  },
+  {
+    "pl": "Eksport PNG został przerwany",
+    "en": "PNG export was interrupted"
+  },
+  {
+    "pl": "Wczytaj A…",
+    "en": "Load A…"
+  },
+  {
+    "pl": "Wczytaj B…",
+    "en": "Load B…"
+  },
+  {
+    "pl": "brak pliku",
+    "en": "no file"
+  },
+  {
+    "pl": "Wynik:",
+    "en": "Output:"
+  },
+  {
+    "pl": "Zapisz jako…",
+    "en": "Save as…"
+  },
+  {
+    "pl": "Scal drogi",
+    "en": "Merge roads"
+  },
+  {
+    "pl": "Modele MLOD:",
+    "en": "MLOD models:"
+  },
+  {
+    "pl": "Zastosuj",
+    "en": "Apply"
+  },
+  {
+    "pl": "Folder…",
+    "en": "Folder…"
+  },
+  {
+    "pl": "Plik A",
+    "en": "File A"
+  },
+  {
+    "pl": "Plik B",
+    "en": "File B"
+  },
+  {
+    "pl": "Wynik",
+    "en": "Result"
+  },
+  {
+    "pl": "Tylko zaznaczone drogi",
+    "en": "Selected roads only"
+  },
+  {
+    "pl": "Widoczne po filtrach",
+    "en": "Visible after filtering"
+  },
+  {
+    "pl": "Przezroczyste tło",
+    "en": "Transparent background"
+  },
+  {
+    "pl": "Do eksportu: {0} dróg",
+    "en": "Roads to export: {0}"
+  },
+  {
+    "pl": "Eksportowanie…",
+    "en": "Exporting…"
+  },
+  {
+    "pl": "Eksportuj PNG…",
+    "en": "Export PNG…"
+  },
+  {
+    "pl": "PNG [px]: szerokość",
+    "en": "PNG [px]: width"
+  },
+  {
+    "pl": "wysokość",
+    "en": "height"
+  },
+  {
+    "pl": "Bufor obrazu: {0} MiB",
+    "en": "Image buffer: {0} MiB"
+  },
+  {
+    "pl": "Pełny obszar mapy",
+    "en": "Full map area"
+  },
+  {
+    "pl": "Lewy dolny róg [m]: E",
+    "en": "Bottom left corner [m]: E"
+  },
+  {
+    "pl": "Rozmiar mapy [m]:",
+    "en": "Map size [m]:"
+  },
+  {
+    "pl": "Eksport zachowuje współrzędne mapy, bez marginesów. Północ jest u góry; części poza mapą są przycinane.",
+    "en": "Export preserves map coordinates without margins. North is at the top; parts outside the map are clipped."
+  },
+  {
+    "pl": "Kadr PNG jest dopasowany do eksportowanych dróg. Włącz pełny obszar mapy, aby zachować ich położenie na mapie.",
+    "en": "The PNG frame fits the exported roads. Enable the full map area to preserve their placement on the map."
+  },
+  {
+    "pl": "Lista dróg",
+    "en": "Road list"
+  },
+  {
+    "pl": "Wczytaj plik.",
+    "en": "Load a file."
+  },
+  {
+    "pl": "ID lub nazwa modelu…",
+    "en": "ID or model name…"
+  },
+  {
+    "pl": "Wszystkie typy",
+    "en": "All types"
+  },
+  {
+    "pl": "Długość [m]:",
+    "en": "Length [m]:"
+  },
+  {
+    "pl": "od",
+    "en": "from"
+  },
+  {
+    "pl": "do",
+    "en": "to"
+  },
+  {
+    "pl": "Tylko zaznaczone",
+    "en": "Selected only"
+  },
+  {
+    "pl": "Widoczne: {0} / {1} · zaznaczone: {2}",
+    "en": "Visible: {0} / {1} · selected: {2}"
+  },
+  {
+    "pl": "Zaznacz widoczne",
+    "en": "Select visible"
+  },
+  {
+    "pl": "Wyczyść zaznaczenie",
+    "en": "Clear selection"
+  },
+  {
+    "pl": "Reset filtrów",
+    "en": "Reset filters"
+  },
+  {
+    "pl": "#{0} · {1} · {2} m · {3} części{4}",
+    "en": "#{0} · {1} · {2} m · {3} parts{4}"
+  },
+  {
+    "pl": "{0}\nObrót bazowy: {1}° (TV4P 0x8C)\nMLOD: {2} · nazwy: {3}\n{4}",
+    "en": "{0}\nKey rotation: {1}° (TV4P 0x8C)\nMLOD: {2} · filenames: {3}\n{4}"
+  },
+  {
+    "pl": "Podgląd dróg",
+    "en": "Road preview"
+  },
+  {
+    "pl": "Dopasuj widoczne",
+    "en": "Fit visible"
+  },
+  {
+    "pl": "Dopasuj zaznaczone",
+    "en": "Fit selected"
+  },
+  {
+    "pl": "Kształt i połączenia z MLOD · kółko: zoom · przeciągnij: przesuwanie · kliknij drogę: zaznaczenie",
+    "en": "Shape and connections from MLOD · wheel: zoom · drag: pan · click a road: select"
+  },
+  {
+    "pl": "Wczytaj projekt, aby wyświetlić drogi",
+    "en": "Load a project to display roads"
+  },
+  {
+    "pl": "Brak geometrii w bieżącym filtrze",
+    "en": "No geometry matches the current filter"
+  },
+  {
+    "pl": "#{0} · {1} m · {2} części",
+    "en": "#{0} · {1} m · {2} parts"
+  },
+  {
+    "pl": "Język",
+    "en": "Language"
+  },
+  {
+    "pl": "Scalanie dróg Terrain Builder",
+    "en": "Terrain Builder Road Merger"
+  },
+  {
+    "pl": "drogi.png",
+    "en": "roads.png"
+  },
+  {
+    "pl": "Wybierz folder modeli MLOD",
+    "en": "Choose the MLOD models folder"
+  },
+  {
+    "pl": "Szerokość i wysokość PNG muszą mieścić się w zakresie 128–32768 px",
+    "en": "PNG width and height must be between 128 and 32768 px"
+  },
+  {
+    "pl": "PNG może mieć maksymalnie 268 435 456 pikseli (np. 16384 × 16384)",
+    "en": "PNG may contain at most 268,435,456 pixels (e.g. 16384 × 16384)"
+  },
+  {
+    "pl": "Nieprawidłowe granice mapy",
+    "en": "Invalid map bounds"
+  },
+  {
+    "pl": "Brak geometrii do eksportu",
+    "en": "No geometry to export"
+  },
+  {
+    "pl": "Brak pamięci na obraz PNG o tych wymiarach",
+    "en": "Not enough memory for a PNG image of these dimensions"
+  },
+  {
+    "pl": "Nie można utworzyć obrazu PNG",
+    "en": "Cannot create PNG image"
+  },
+  {
+    "pl": "Przepełnienie przesunięcia MLOD",
+    "en": "MLOD offset overflow"
+  },
+  {
+    "pl": "Niekompletne dane MLOD",
+    "en": "Truncated MLOD"
+  },
+  {
+    "pl": "Zbyt długi tekst MLOD",
+    "en": "MLOD string too long"
+  },
+  {
+    "pl": "Nie można odczytać {0}",
+    "en": "Cannot read {0}"
+  },
+  {
+    "pl": "Nieprawidłowy model {0}",
+    "en": "Invalid model {0}"
+  },
+  {
+    "pl": "Oczekiwano pliku MLOD P3D",
+    "en": "Expected MLOD P3D"
+  },
+  {
+    "pl": "Nieobsługiwana wersja MLOD",
+    "en": "Unsupported MLOD version"
+  },
+  {
+    "pl": "Zbyt wiele LOD w MLOD",
+    "en": "Too many MLOD LODs"
+  },
+  {
+    "pl": "Nieobsługiwany LOD MLOD",
+    "en": "Unsupported MLOD LOD"
+  },
+  {
+    "pl": "Nieobsługiwana wersja P3DM",
+    "en": "Unsupported P3DM version"
+  },
+  {
+    "pl": "MLOD przekracza limity",
+    "en": "MLOD exceeds limits"
+  },
+  {
+    "pl": "Współrzędne wierzchołka nie są skończone",
+    "en": "Non-finite vertex"
+  },
+  {
+    "pl": "Nieobsługiwany wielokąt MLOD",
+    "en": "Unsupported MLOD polygon"
+  },
+  {
+    "pl": "Nieprawidłowy indeks wierzchołka",
+    "en": "Invalid vertex index"
+  },
+  {
+    "pl": "Brak TAGG",
+    "en": "Missing TAGG"
+  },
+  {
+    "pl": "Brak siatki wizualnej w MLOD",
+    "en": "No visual mesh in MLOD"
+  },
+  {
+    "pl": "Brak punktów połączenia LB/PB/LE/PE",
+    "en": "Missing LB/PB/LE/PE connection selections"
+  },
+  {
+    "pl": "Brak parametrów modelu",
+    "en": "Missing model parameters"
+  },
+  {
+    "pl": "Brak długości",
+    "en": "Missing length"
+  },
+  {
+    "pl": "Nieznany format nazwy modelu",
+    "en": "Unknown model naming"
+  },
+  {
+    "pl": "Nieprawidłowa geometria z nazwy pliku",
+    "en": "Invalid filename geometry"
+  },
+  {
+    "pl": "nazwa pliku",
+    "en": "filename"
+  },
+  {
+    "pl": "Brak pliku modelu",
+    "en": "Missing model file"
+  },
+  {
+    "pl": "Brak wejściowego punktu połączenia części",
+    "en": "Missing part entry port"
+  },
+  {
+    "pl": "Brak wyjściowego punktu połączenia części",
+    "en": "Missing part exit port"
+  },
+  {
+    "pl": "Niekompletna wartość TV4P u16",
+    "en": "Truncated TV4P u16"
+  },
+  {
+    "pl": "Niekompletna wartość TV4P u32",
+    "en": "Truncated TV4P u32"
+  },
+  {
+    "pl": "Niekompletna wartość TV4P f64",
+    "en": "Truncated TV4P f64"
+  },
+  {
+    "pl": "Nieprawidłowa lista elementów TV4P",
+    "en": "Invalid TV4P entry list"
+  },
+  {
+    "pl": "Nieprawidłowy znacznik elementu",
+    "en": "Invalid entry marker"
+  },
+  {
+    "pl": "Nieprawidłowy rozmiar elementu",
+    "en": "Invalid entry size"
+  },
+  {
+    "pl": "Niezgodny rozmiar listy TV4P",
+    "en": "TV4P list size mismatch"
+  },
+  {
+    "pl": "Oczekiwano jednego bloku 0x{0}, znaleziono {1}",
+    "en": "Expected one block 0x{0}, found {1}"
+  },
+  {
+    "pl": "Niekompletne pole",
+    "en": "Truncated field"
+  },
+  {
+    "pl": "Niekompletna tablica",
+    "en": "Truncated array"
+  },
+  {
+    "pl": "Nieprawidłowa lista zagnieżdżona",
+    "en": "Invalid nested list"
+  },
+  {
+    "pl": "Nieznany typ pola 0x{0}",
+    "en": "Unknown field type 0x{0}"
+  },
+  {
+    "pl": "Pole wykracza poza element",
+    "en": "Field exceeds entry"
+  },
+  {
+    "pl": "Transformacja drogi {0} nie jest skończona",
+    "en": "Non-finite transform for road {0}"
+  },
+  {
+    "pl": "Brak punktu połączenia odgałęzienia 0x{0}",
+    "en": "Missing branch connection port 0x{0}"
+  },
+  {
+    "pl": "Przepełnienie ID TV4P",
+    "en": "TV4P ID overflow"
+  },
+  {
+    "pl": "Plik wynikowy musi być inny niż A i B",
+    "en": "Output file must differ from A and B"
+  },
+  {
+    "pl": "Przepełnienie ID",
+    "en": "ID overflow"
+  },
+  {
+    "pl": "Niejednoznaczne przesunięcie metadanych 0x{0}",
+    "en": "Ambiguous metadata offset 0x{0}"
+  },
+  {
+    "pl": "Przepełnienie przesunięcia metadanych",
+    "en": "Metadata offset overflow"
+  },
+  {
+    "pl": "A: {0} · B: {1} · dodano: {2} · wynik: {3} dróg",
+    "en": "A: {0} · B: {1} · added: {2} · result: {3} roads"
+  },
+  {
+    "pl": "Niezgodność po przebudowaniu bloku",
+    "en": "Roundtrip mismatch"
+  },
+  {
+    "pl": "Przebudowany blok dróg jest identyczny ({0} bajtów)",
+    "en": "Road block roundtrip: identical ({0} bytes)"
+  },
+  {
+    "pl": "0x{0}: {1} elementów",
+    "en": "0x{0}: {1} entries"
+  },
+  {
+    "pl": "Eksport musi trafić do innego pliku niż projekt źródłowy",
+    "en": "Export must use a different file from the source project"
+  },
+  {
+    "pl": "{0} dróg, {1} części, {2} ostrzeżeń geometrii",
+    "en": "{0} roads, {1} parts, {2} geometry warnings"
+  },
+  {
+    "pl": "Długość {0} m; {1} trójkątów; punkty połączenia {2}",
+    "en": "Length {0} m; {1} triangles; ports {2}"
+  },
+  {
+    "pl": "Nieznane polecenie. Użyj --help.",
+    "en": "Unknown command. Use --help."
+  },
+  {
+    "pl": "Język musi być pl lub en",
+    "en": "Language must be pl or en"
+  },
+  {
+    "pl": "Opcjonalny język: --lang pl lub --lang en (przed poleceniem)",
+    "en": "Optional language: --lang pl or --lang en (before the command)"
+  },
+  {
+    "pl": "Model P3D nie jest MLOD (format {0}). Podgląd dróg wymaga niezbinaryzowanych modeli MLOD.",
+    "en": "P3D model is not MLOD (format {0}). Road preview requires unbinarized MLOD models."
+  },
+  {
+    "pl": "Folder modeli nie istnieje: {0}. Wybierz folder zawierający modele MLOD.",
+    "en": "Model folder does not exist: {0}. Choose a folder containing MLOD models."
+  },
+  {
+    "pl": "Modele nie są MLOD: {0}. Podgląd tych części jest niedostępny. Wymagane są niezbinaryzowane pliki MLOD P3D.",
+    "en": "Models are not MLOD: {0}. These parts cannot be previewed. Unbinarized MLOD P3D files are required."
+  },
+  {
+    "pl": "Tylko nowe drogi z B",
+    "en": "New roads from B only"
+  },
+  {
+    "pl": "Nowe drogi z B: {0}",
+    "en": "New roads from B: {0}"
+  },
+  {
+    "pl": "Zielone: nowe z B · niebieskie: z A · żółte: zaznaczone",
+    "en": "Green: new from B · blue: from A · yellow: selected"
+  },
+  {
+    "pl": "NOWA",
+    "en": "NEW"
+  },
+  {
+    "pl": "Rozdzielczość PNG [px]",
+    "en": "PNG resolution [px]"
+  },
+  {
+    "pl": "Lewy dolny róg [m]",
+    "en": "Bottom left corner [m]"
+  },
+  {
+    "pl": "Zaznaczone",
+    "en": "Selected"
+  },
+  {
+    "pl": "Widoczne",
+    "en": "Visible"
+  },
+  {
+    "pl": "Alfa",
+    "en": "Alpha"
+  },
+  {
+    "pl": "Mapa",
+    "en": "Map"
+  },
+  {
+    "pl": "ASC gotowy. Współrzędne pochodzą z nagłówka; można je dopasować w panelu.",
+    "en": "ASC ready. Coordinates come from the header; adjust them in the panel."
+  },
+  {
+    "pl": "ASC za duży dla tej platformy",
+    "en": "ASC is too large for this platform"
+  },
+  {
+    "pl": "ASC {0} × {1} · komórka {2} m",
+    "en": "ASC {0} × {1} · cell {2} m"
+  },
+  {
+    "pl": "ASC: oczekiwano {0} komórek, odczytano {1}",
+    "en": "ASC: expected {0} cells, read {1}"
+  },
+  {
+    "pl": "Aby zmienić bazowy TV4P, uruchom nową sesję aplikacji lub otwórz zapisany projekt.",
+    "en": "To change the base TV4P, restart the application or open a saved project."
+  },
+  {
+    "pl": "BMP: obsługiwane nieskompresowane 8/24/32 bit. Zapisz inne BMP jako PNG",
+    "en": "BMP: uncompressed 8/24/32-bit supported. Convert other BMP files to PNG"
+  },
+  {
+    "pl": "Brak dojazdu do punktu przy tej rozdzielczości. Zmniejsz krok automatu",
+    "en": "Cannot reach the point at this resolution. Reduce the routing step"
+  },
+  {
+    "pl": "Brak komórek ASC wewnątrz partów. Sprawdź zasięg i rozdzielczość ASC",
+    "en": "No ASC cell centres inside the road parts. Check ASC bounds and resolution"
+  },
+  {
+    "pl": "Brak końca",
+    "en": "Missing end"
+  },
+  {
+    "pl": "Brak modelu podglądu",
+    "en": "Missing preview model"
+  },
+  {
+    "pl": "Brak początku",
+    "en": "Missing start"
+  },
+  {
+    "pl": "Brak portów parta",
+    "en": "Missing road part ports"
+  },
+  {
+    "pl": "Brak prostych i zakrętów MLOD dla tej rodziny",
+    "en": "No MLOD straights and bends for this road family"
+  },
+  {
+    "pl": "Brak wartości nagłówka ASC",
+    "en": "Missing ASC header value"
+  },
+  {
+    "pl": "Brak wyjścia modelu",
+    "en": "Missing model exit"
+  },
+  {
+    "pl": "Brak wysokości ASC na początku drogi",
+    "en": "Missing ASC elevation at the road start"
+  },
+  {
+    "pl": "Brak wysokości ASC na łączeniu lub końcu drogi",
+    "en": "Missing ASC elevation at a connection or road end"
+  },
+  {
+    "pl": "Brak wysokości na części trasy",
+    "en": "Missing elevations on part of the route"
+  },
+  {
+    "pl": "Brak ścieżki w definicji Road Tool",
+    "en": "Missing path in the Road Tool definition"
+  },
+  {
+    "pl": "Błąd podglądu segmentów",
+    "en": "Segment preview error"
+  },
+  {
+    "pl": "Ctrl+Z cofa modyfikację terenu. Źródłowy ASC pozostaje zachowany.",
+    "en": "Ctrl+Z undoes terrain changes. The source ASC is preserved."
+  },
+  {
+    "pl": "Część SHP ma mniej niż dwa punkty",
+    "en": "SHP part has fewer than two points"
+  },
+  {
+    "pl": "Część SHP składa się z powtórzonych punktów",
+    "en": "SHP part consists of repeated points"
+  },
+  {
+    "pl": "Dane muszą być w metrach i w układzie mapy. Brak automatycznej reprojekcji. Z/M oraz atrybuty DBF nie są importowane.",
+    "en": "Data must use metres and the map coordinate system. No automatic reprojection. Z/M and DBF attributes are not imported."
+  },
+  {
+    "pl": "Dopasuj ASC pod wybraną drogą",
+    "en": "Fit ASC under selected road"
+  },
+  {
+    "pl": "Dopasuj modele do punktów",
+    "en": "Fit models to points"
+  },
+  {
+    "pl": "Droga #{0}: model {1} nie należy do typu Road Tool {2} / kategorii {3}",
+    "en": "Road #{0}: model {1} does not belong to Road Tool type {2} / category {3}"
+  },
+  {
+    "pl": "Droga #{0}: segment {1} ma niezgodne odwołanie do definicji typu {2}",
+    "en": "Road #{0}: segment {1} has an incompatible reference to type definition {2}"
+  },
+  {
+    "pl": "Droga {0} nie ma dopasowanych segmentów",
+    "en": "Road {0} has no fitted segments"
+  },
+  {
+    "pl": "Droga {0} przecina obszar zakazany lub nie spełnia ograniczeń ASC",
+    "en": "Road {0} crosses a forbidden area or violates ASC constraints"
+  },
+  {
+    "pl": "Droga {0} zawiera rozłączone segmenty",
+    "en": "Road {0} contains disconnected segments"
+  },
+  {
+    "pl": "Długość SHP nie zgadza się z nagłówkiem",
+    "en": "SHP length does not match the header"
+  },
+  {
+    "pl": "Import dróg SHP",
+    "en": "Import SHP roads"
+  },
+  {
+    "pl": "Import dróg SHP…",
+    "en": "Import SHP roads…"
+  },
+  {
+    "pl": "Import dróg wymaga PolyLine, PolyLineZ lub PolyLineM. Typ SHP: {0}",
+    "en": "Road import requires PolyLine, PolyLineZ or PolyLineM. SHP type: {0}"
+  },
+  {
+    "pl": "Import satelity i poziomów powiększenia",
+    "en": "Import satellite and zoom levels"
+  },
+  {
+    "pl": "Import wysokości ASC",
+    "en": "Import ASC elevations"
+  },
+  {
+    "pl": "Klik: punkt · Enter: zakończ · Esc: anuluj\nŚrodkowy/prawy przycisk: przesuwanie",
+    "en": "Click: point · Enter: finish · Esc: cancel\nMiddle/right button: pan"
+  },
+  {
+    "pl": "Kliknij na mapie początek nowej drogi",
+    "en": "Click the start of a new road on the map"
+  },
+  {
+    "pl": "Kliknij początek. Kolejne segmenty dodasz przyciskiem.",
+    "en": "Click the start. Add subsequent segments with the button."
+  },
+  {
+    "pl": "Lewy dolny róg / metry",
+    "en": "Bottom-left corner / metres"
+  },
+  {
+    "pl": "Lokalne współrzędne mapy",
+    "en": "Local map coordinates"
+  },
+  {
+    "pl": "Modele dróg",
+    "en": "Road models"
+  },
+  {
+    "pl": "Na żywo",
+    "en": "Live"
+  },
+  {
+    "pl": "Nie można dopasować modeli przy {0} m trasy. Złagodź zakręty, zwiększ tolerancję lub użyj segmentów",
+    "en": "Cannot fit models at {0} m along the route. Soften bends, increase tolerance or place segments manually"
+  },
+  {
+    "pl": "Nie można mieszać typów drogi bez skrzyżowania",
+    "en": "Cannot mix road types without a junction"
+  },
+  {
+    "pl": "Nie można przywrócić ASC: {0}",
+    "en": "Cannot restore ASC: {0}"
+  },
+  {
+    "pl": "Nie rozwinięto palety PNG",
+    "en": "PNG palette was not expanded"
+  },
+  {
+    "pl": "Nie znaleziono trasy spełniającej ograniczenia",
+    "en": "No route satisfying the constraints was found"
+  },
+  {
+    "pl": "Nieobsługiwana kategoria segmentu lub kierunek",
+    "en": "Unsupported segment category or direction"
+  },
+  {
+    "pl": "Nieobsługiwana wersja projektu",
+    "en": "Unsupported project version"
+  },
+  {
+    "pl": "Nieobsługiwane współrzędne",
+    "en": "Unsupported coordinates"
+  },
+  {
+    "pl": "Nieobsługiwane współrzędne TV4P",
+    "en": "Unsupported TV4P coordinates"
+  },
+  {
+    "pl": "Nieobsługiwany kod wstawionego segmentu Road Tool: {0}",
+    "en": "Unsupported inserted Road Tool segment code: {0}"
+  },
+  {
+    "pl": "Nieobsługiwany nagłówek BMP",
+    "en": "Unsupported BMP header"
+  },
+  {
+    "pl": "Niepełne współrzędne SHP",
+    "en": "Truncated SHP coordinates"
+  },
+  {
+    "pl": "Niepełne współrzędne rekordu SHP #{0}",
+    "en": "Truncated coordinates in SHP record #{0}"
+  },
+  {
+    "pl": "Niepełny BMP",
+    "en": "Truncated BMP"
+  },
+  {
+    "pl": "Niepełny PNG Adam7",
+    "en": "Truncated Adam7 PNG"
+  },
+  {
+    "pl": "Niepełny nagłówek SHP",
+    "en": "Truncated SHP header"
+  },
+  {
+    "pl": "Niepełny nagłówek rekordu SHP",
+    "en": "Truncated SHP record header"
+  },
+  {
+    "pl": "Niepełny obraz PNG",
+    "en": "Truncated PNG image"
+  },
+  {
+    "pl": "Niepełny rekord SHP",
+    "en": "Truncated SHP record"
+  },
+  {
+    "pl": "Nieprawidłowa liczba części lub punktów SHP #{0}",
+    "en": "Invalid part or point count in SHP #{0}"
+  },
+  {
+    "pl": "Nieprawidłowa paleta BMP",
+    "en": "Invalid BMP palette"
+  },
+  {
+    "pl": "Nieprawidłowa pozycja ASC",
+    "en": "Invalid ASC position"
+  },
+  {
+    "pl": "Nieprawidłowa rotacja",
+    "en": "Invalid rotation"
+  },
+  {
+    "pl": "Nieprawidłowa trasa lub promień",
+    "en": "Invalid route or radius"
+  },
+  {
+    "pl": "Nieprawidłowa wysokość: {0}",
+    "en": "Invalid elevation: {0}"
+  },
+  {
+    "pl": "Nieprawidłowe dane Z/M SHP #{0}",
+    "en": "Invalid Z/M data in SHP #{0}"
+  },
+  {
+    "pl": "Nieprawidłowe indeksy części SHP #{0}",
+    "en": "Invalid part indices in SHP #{0}"
+  },
+  {
+    "pl": "Nieprawidłowe przesunięcie SHP",
+    "en": "Invalid SHP offset"
+  },
+  {
+    "pl": "Nieprawidłowe punkty drogi",
+    "en": "Invalid road points"
+  },
+  {
+    "pl": "Nieprawidłowe ustawienia automatu",
+    "en": "Invalid routing settings"
+  },
+  {
+    "pl": "Nieprawidłowe ustawienia trasy",
+    "en": "Invalid route settings"
+  },
+  {
+    "pl": "Nieprawidłowe współrzędne SHP #{0}",
+    "en": "Invalid coordinates in SHP #{0}"
+  },
+  {
+    "pl": "Nieprawidłowe współrzędne mapy",
+    "en": "Invalid map coordinates"
+  },
+  {
+    "pl": "Nieprawidłowe {0}",
+    "en": "Invalid {0}"
+  },
+  {
+    "pl": "Nieprawidłowy BMP",
+    "en": "Invalid BMP"
+  },
+  {
+    "pl": "Nieprawidłowy nagłówek SHP",
+    "en": "Invalid SHP header"
+  },
+  {
+    "pl": "Nieprawidłowy obszar zakazany",
+    "en": "Invalid forbidden area"
+  },
+  {
+    "pl": "Nieprawidłowy pusty rekord SHP",
+    "en": "Invalid null SHP record"
+  },
+  {
+    "pl": "Nieprawidłowy rozmiar ASC",
+    "en": "Invalid ASC dimensions"
+  },
+  {
+    "pl": "Nieprawidłowy rozmiar rekordu SHP #{0}",
+    "en": "Invalid size of SHP record #{0}"
+  },
+  {
+    "pl": "Nieprawidłowy teren",
+    "en": "Invalid terrain"
+  },
+  {
+    "pl": "Nieprawidłowy transform drogi",
+    "en": "Invalid road transform"
+  },
+  {
+    "pl": "Obliczanie podglądu segmentów…",
+    "en": "Calculating segment preview…"
+  },
+  {
+    "pl": "Obróć o 5°",
+    "en": "Rotate by 5°"
+  },
+  {
+    "pl": "Obszar wymaga trzech punktów",
+    "en": "An area requires three points"
+  },
+  {
+    "pl": "Odrzucić niezapisane zmiany i otworzyć projekt?",
+    "en": "Discard unsaved changes and open the project?"
+  },
+  {
+    "pl": "Odstęp m",
+    "en": "Interval m"
+  },
+  {
+    "pl": "Odwrócić można zakręt",
+    "en": "Only bends can be reversed"
+  },
+  {
+    "pl": "Odwrócony segment kluczowy nie jest obsługiwany",
+    "en": "A reversed key segment is not supported"
+  },
+  {
+    "pl": "Odwróć zakręt",
+    "en": "Reverse bend"
+  },
+  {
+    "pl": "Otwórz TV4P",
+    "en": "Open TV4P"
+  },
+  {
+    "pl": "Otwórz TV4P i satelitę, wybierz typ drogi i klikaj punkty na mapie.",
+    "en": "Open TV4P and satellite, choose a road type and click points on the map."
+  },
+  {
+    "pl": "Otwórz TV4P, wybierz modele MLOD i wczytaj mapę. Punkty trasy dodajesz kliknięciem.",
+    "en": "Open TV4P, choose MLOD models and load the map. Click to add route points."
+  },
+  {
+    "pl": "Otwórz projekt",
+    "en": "Open project"
+  },
+  {
+    "pl": "Part o zerowej długości",
+    "en": "Zero-length road part"
+  },
+  {
+    "pl": "Party nie łączą się; przerwano modyfikację ASC",
+    "en": "Road parts are disconnected; ASC modification stopped"
+  },
+  {
+    "pl": "Pierwszy segment musi być ustawiony bez odwrócenia",
+    "en": "The first segment must not be reversed"
+  },
+  {
+    "pl": "Początkowy segment konec nie mieści się na trasie lub nie spełnia ograniczeń terenu",
+    "en": "The starting konec segment does not fit the route or violates terrain constraints"
+  },
+  {
+    "pl": "Podgląd anulowany",
+    "en": "Preview cancelled"
+  },
+  {
+    "pl": "Podgląd: {0} segmentów · klik: zatwierdź · Enter: zakończ",
+    "en": "Preview: {0} segments · click: confirm · Enter: finish"
+  },
+  {
+    "pl": "PolyLine / PolyLineZ / PolyLineM. Każda część staje się osobną trasą.",
+    "en": "PolyLine / PolyLineZ / PolyLineM. Each part becomes a separate route."
+  },
+  {
+    "pl": "Ponów",
+    "en": "Redo"
+  },
+  {
+    "pl": "Ponów · Ctrl+Y",
+    "en": "Redo · Ctrl+Y"
+  },
+  {
+    "pl": "Powtórzony lub niepoprawny nagłówek ASC",
+    "en": "Duplicate or invalid ASC header"
+  },
+  {
+    "pl": "Profil wysokościowy",
+    "en": "Elevation profile"
+  },
+  {
+    "pl": "Projekt bazowy zmienił się: nie znaleziono edytowanej drogi",
+    "en": "Base project has changed: edited road not found"
+  },
+  {
+    "pl": "Projekt dróg",
+    "en": "Road project"
+  },
+  {
+    "pl": "Promień min. m",
+    "en": "Min. radius m"
+  },
+  {
+    "pl": "Przeciągnij drogę w trybie Wybierz, aby ją przesunąć.",
+    "en": "Drag a road in Select mode to move it."
+  },
+  {
+    "pl": "Przekroczono budżet wyszukiwania. Zwiększ krok lub dodaj punkty pośrednie",
+    "en": "Search budget exceeded. Increase the step or add intermediate points"
+  },
+  {
+    "pl": "Przerwano podgląd",
+    "en": "Preview interrupted"
+  },
+  {
+    "pl": "Przesunięcie E",
+    "en": "Offset E"
+  },
+  {
+    "pl": "Punkty są za blisko, aby zmieścić promień {0} m. Rozsuń punkty lub zmniejsz promień",
+    "en": "Points are too close for radius {0} m. Move them apart or reduce the radius"
+  },
+  {
+    "pl": "Płynny profil z wysokości ASC na łączeniach. Zmiana tylko wewnątrz obrysu MLOD, bez poboczy.",
+    "en": "Smooth profile from ASC elevations at connections. Changes stay inside the MLOD footprint, excluding shoulders."
+  },
+  {
+    "pl": "Rekord #{0} ma typ inny niż nagłówek SHP",
+    "en": "Record #{0} has a different type from the SHP header"
+  },
+  {
+    "pl": "SHP nie zawiera linii dróg",
+    "en": "SHP contains no road polylines"
+  },
+  {
+    "pl": "Satelita gotowa. Ustaw zasięg w metrach; obraz jest wyrównany do mapy.",
+    "en": "Satellite ready. Set bounds in metres; the image is aligned to the map."
+  },
+  {
+    "pl": "Segment konec nie ma obu portów połączenia",
+    "en": "The konec segment is missing a connection port"
+  },
+  {
+    "pl": "Sprzeczny nagłówek ASC",
+    "en": "Conflicting ASC header"
+  },
+  {
+    "pl": "Szerokość",
+    "en": "Width"
+  },
+  {
+    "pl": "Trasa jest za krótka na dwa segmenty konec lub ma powtórzone punkty",
+    "en": "The route is too short for two konec segments or contains repeated points"
+  },
+  {
+    "pl": "Trasa przekracza budżet 20000 segmentów",
+    "en": "The route exceeds the 20000-segment budget"
+  },
+  {
+    "pl": "Trasa wyznaczona i złożona z modeli",
+    "en": "Route found and assembled from models"
+  },
+  {
+    "pl": "Układ współrzędnych z PRJ",
+    "en": "Coordinate system from PRJ"
+  },
+  {
+    "pl": "Usuń ostatni obszar zakazany",
+    "en": "Remove last forbidden area"
+  },
+  {
+    "pl": "Usuń ostatni punkt",
+    "en": "Remove last point"
+  },
+  {
+    "pl": "Usuń ostatni segment",
+    "en": "Remove last segment"
+  },
+  {
+    "pl": "Usuń powtórzone punkty trasy",
+    "en": "Remove repeated route points"
+  },
+  {
+    "pl": "Usuń wybraną drogę",
+    "en": "Remove selected road"
+  },
+  {
+    "pl": "Uszkodzona pamięć podręczna ASC",
+    "en": "Corrupted ASC cache"
+  },
+  {
+    "pl": "W bazowym TV4P potrzebna jest przykładowa droga wybranego typu (utwórz ją w Terrain Builder)",
+    "en": "The base TV4P needs an example road of the selected type (create it in Terrain Builder)"
+  },
+  {
+    "pl": "W bazowym TV4P potrzebny jest co najmniej jeden segment odgałęzienia",
+    "en": "The base TV4P needs at least one branch segment"
+  },
+  {
+    "pl": "Warsztat dróg",
+    "en": "Road workshop"
+  },
+  {
+    "pl": "Wczytaj ASC, aby sprawdzić wysokości.",
+    "en": "Load ASC to inspect elevations."
+  },
+  {
+    "pl": "Wczytaj wysokości ASC",
+    "en": "Load ASC elevations"
+  },
+  {
+    "pl": "Wczytano {0} dróg i {1} modeli MLOD",
+    "en": "Loaded {0} roads and {1} MLOD models"
+  },
+  {
+    "pl": "Weryfikacja zapisu TV4P nie powiodła się",
+    "en": "TV4P write verification failed"
+  },
+  {
+    "pl": "Widoczność",
+    "en": "Visibility"
+  },
+  {
+    "pl": "Wskaż przynajmniej dwa punkty",
+    "en": "Specify at least two points"
+  },
+  {
+    "pl": "Współrzędne świata",
+    "en": "World coordinates"
+  },
+  {
+    "pl": "Wybierz drogę.",
+    "en": "Select a road."
+  },
+  {
+    "pl": "Wybierz narysowaną trasę",
+    "en": "Select a drawn route"
+  },
+  {
+    "pl": "Wybierz trasę projektu z wygenerowanymi partami",
+    "en": "Select a project route with generated parts"
+  },
+  {
+    "pl": "Wyrównaj ASC do początku mapy",
+    "en": "Align ASC to map origin"
+  },
+  {
+    "pl": "Wysokości ASC…",
+    "en": "ASC elevations…"
+  },
+  {
+    "pl": "Wysokość",
+    "en": "Height"
+  },
+  {
+    "pl": "Wysokość poza zakresem",
+    "en": "Elevation out of range"
+  },
+  {
+    "pl": "Wysokość poza zakresem ASC",
+    "en": "Elevation outside ASC bounds"
+  },
+  {
+    "pl": "Wytycz pierwszą drogę",
+    "en": "Draw your first road"
+  },
+  {
+    "pl": "Wyznacz trasę po terenie",
+    "en": "Route across terrain"
+  },
+  {
+    "pl": "Za dużo części SHP",
+    "en": "Too many SHP parts"
+  },
+  {
+    "pl": "Za dużo komórek ASC",
+    "en": "Too many ASC cells"
+  },
+  {
+    "pl": "Za dużo punktów SHP",
+    "en": "Too many SHP points"
+  },
+  {
+    "pl": "Zadanie przerwane przez błąd wewnętrzny",
+    "en": "Task interrupted by an internal error"
+  },
+  {
+    "pl": "Zaimportowano {0} tras SHP. Wybierz trasę i dopasuj modele.",
+    "en": "Imported {0} SHP routes. Select a route and fit models."
+  },
+  {
+    "pl": "Zakończ generowanie trasy przed eksportem TV4P",
+    "en": "Finish route generation before exporting TV4P"
+  },
+  {
+    "pl": "Zakończ generowanie trasy przed zapisem projektu",
+    "en": "Finish route generation before saving the project"
+  },
+  {
+    "pl": "Zakończ rysowanie",
+    "en": "Finish drawing"
+  },
+  {
+    "pl": "Zakończ rysowanie przed modyfikacją ASC",
+    "en": "Finish drawing before modifying ASC"
+  },
+  {
+    "pl": "Zamknąć aplikację bez zapisu projektu?",
+    "en": "Close the application without saving the project?"
+  },
+  {
+    "pl": "Zapisano trasę wygenerowaną podczas rysowania, z konec na obu końcach.",
+    "en": "Saved the route generated while drawing, with konec at both ends."
+  },
+  {
+    "pl": "Zapisano {0}. Sprawdź wynik w Terrain Builder.",
+    "en": "Saved {0}. Check the result in Terrain Builder."
+  },
+  {
+    "pl": "Zapisz wynik do pliku innego niż projekt źródłowy",
+    "en": "Save the result to a different file from the source project"
+  },
+  {
+    "pl": "Zapisz zmodyfikowany ASC pod inną nazwą niż źródłowy",
+    "en": "Save the modified ASC under a different name from the source"
+  },
+  {
+    "pl": "Zatwierdź co najmniej dwa punkty trasy",
+    "en": "Confirm at least two route points"
+  },
+  {
+    "pl": "Zielone segmenty: przewidywany przebieg. Klik zatwierdza poprawne dopasowanie. Enter zapisuje gotową drogę.",
+    "en": "Green segments: predicted route. Click to confirm a valid fit. Enter saves the completed road."
+  },
+  {
+    "pl": "Zmieniono {0} komórek ASC pod partami. Ctrl+Z cofa operację. Zapisz wynik przyciskiem Eksport ASC.",
+    "en": "Changed {0} ASC cells under road parts. Ctrl+Z undoes the operation. Save the result with Export ASC."
+  },
+  {
+    "pl": "{0} · {1} części",
+    "en": "{0} · {1} parts"
+  },
+  {
+    "pl": "{0}: brak MLOD; model pominięty w edytorze",
+    "en": "{0}: missing MLOD; model skipped in the editor"
+  },
+  {
+    "pl": "1 piksel = 1 metr",
+    "en": "1 pixel = 1 metre"
+  },
+  {
+    "pl": "Anulowano",
+    "en": "Cancelled"
+  },
+  {
+    "pl": "Anulowano eksport",
+    "en": "Export cancelled"
+  },
+  {
+    "pl": "Anulowano zadanie",
+    "en": "Task cancelled"
+  },
+  {
+    "pl": "Anuluj",
+    "en": "Cancel"
+  },
+  {
+    "pl": "Brak MLOD",
+    "en": "No MLOD"
+  },
+  {
+    "pl": "Cofnij",
+    "en": "Undo"
+  },
+  {
+    "pl": "Cofnij · Ctrl+Z",
+    "en": "Undo · Ctrl+Z"
+  },
+  {
+    "pl": "Dodaj przynajmniej dwa punkty",
+    "en": "Add at least two points"
+  },
+  {
+    "pl": "Dodaj segment",
+    "en": "Add segment"
+  },
+  {
+    "pl": "Dopasowanie modeli",
+    "en": "Fitting models"
+  },
+  {
+    "pl": "Dopasuj modele do wszystkich tras przed eksportem",
+    "en": "Fit models to all routes before exporting"
+  },
+  {
+    "pl": "Dopasuj widok mapy",
+    "en": "Fit map view"
+  },
+  {
+    "pl": "Droga TV4P #{0}",
+    "en": "TV4P road #{0}"
+  },
+  {
+    "pl": "Droga {0}",
+    "en": "Road {0}"
+  },
+  {
+    "pl": "Eksport ASC",
+    "en": "Export ASC"
+  },
+  {
+    "pl": "Eksport ASC…",
+    "en": "Export ASC…"
+  },
+  {
+    "pl": "Eksport TV4P",
+    "en": "Export TV4P"
+  },
+  {
+    "pl": "Folder modeli MLOD…",
+    "en": "MLOD model folder…"
+  },
+  {
+    "pl": "Import tras SHP",
+    "en": "Import SHP routes"
+  },
+  {
+    "pl": "Importuj trasy",
+    "en": "Import routes"
+  },
+  {
+    "pl": "Kara za spadek",
+    "en": "Slope penalty"
+  },
+  {
+    "pl": "Kierunek startu °",
+    "en": "Start direction °"
+  },
+  {
+    "pl": "Krok automatu m",
+    "en": "Routing step m"
+  },
+  {
+    "pl": "Mapa i teren",
+    "en": "Map and terrain"
+  },
+  {
+    "pl": "Model",
+    "en": "Model"
+  },
+  {
+    "pl": "Modyfikacja ASC pod partami",
+    "en": "Modifying ASC under road parts"
+  },
+  {
+    "pl": "Najpierw dopasuj modele do wybranej trasy",
+    "en": "First fit models to the selected route"
+  },
+  {
+    "pl": "Niezapisane zmiany",
+    "en": "Unsaved changes"
+  },
+  {
+    "pl": "Odczyt TV4P i modeli",
+    "en": "Reading TV4P and models"
+  },
+  {
+    "pl": "Ograniczenia drogi",
+    "en": "Road constraints"
+  },
+  {
+    "pl": "Poziomice",
+    "en": "Contours"
+  },
+  {
+    "pl": "Rysuj",
+    "en": "Draw"
+  },
+  {
+    "pl": "Satelita",
+    "en": "Satellite"
+  },
+  {
+    "pl": "Satelita BMP / PNG…",
+    "en": "Satellite BMP / PNG…"
+  },
+  {
+    "pl": "Segmenty",
+    "en": "Segments"
+  },
+  {
+    "pl": "Spadek maks. %",
+    "en": "Max. slope %"
+  },
+  {
+    "pl": "Szukanie trasy i dopasowanie modeli",
+    "en": "Finding route and fitting models"
+  },
+  {
+    "pl": "Teren pod partami",
+    "en": "Terrain under road parts"
+  },
+  {
+    "pl": "Tolerancja trasy m",
+    "en": "Route tolerance m"
+  },
+  {
+    "pl": "Trasa zapisana. Dopasuj modele lub uruchom automat.",
+    "en": "Route saved. Fit models or run terrain routing."
+  },
+  {
+    "pl": "Trasy projektu",
+    "en": "Project routes"
+  },
+  {
+    "pl": "Typ drogi dla importowanych tras",
+    "en": "Road type for imported routes"
+  },
+  {
+    "pl": "Ustaw typ wybranej trasy",
+    "en": "Set selected route type"
+  },
+  {
+    "pl": "Uwagi modeli ({0})",
+    "en": "Model warnings ({0})"
+  },
+  {
+    "pl": "Wczytaj ASC",
+    "en": "Load ASC"
+  },
+  {
+    "pl": "Wczytaj bazowy TV4P",
+    "en": "Load base TV4P"
+  },
+  {
+    "pl": "Wczytaj modele MLOD",
+    "en": "Load MLOD models"
+  },
+  {
+    "pl": "Wybierz",
+    "en": "Select"
+  },
+  {
+    "pl": "Wybierz model tego samego typu co droga",
+    "en": "Select a model of the same type as the road"
+  },
+  {
+    "pl": "Zadanie przerwane",
+    "en": "Task interrupted"
+  },
+  {
+    "pl": "Zakaz",
+    "en": "Forbidden"
+  },
+  {
+    "pl": "Zapis i weryfikacja TV4P",
+    "en": "Writing and verifying TV4P"
+  },
+  {
+    "pl": "Zapisano zmodyfikowany teren: {0}",
+    "en": "Saved modified terrain: {0}"
+  },
+  {
+    "pl": "Zapisano {0}",
+    "en": "Saved {0}"
+  },
+  {
+    "pl": "Zapisz projekt",
+    "en": "Save project"
+  },
+  {
+    "pl": "{0} m · maks. spadek {1}%",
+    "en": "{0} m · max. slope {1}%"
+  },
+  {
+    "pl": "{0} — {1} m n.p.m.",
+    "en": "{0} — {1} m above sea level"
+  },
+  {
+    "pl": "● zmiany",
+    "en": "● modified"
+  },
+  {
+    "pl": "Brak modelu parta w katalogu",
+    "en": "Road part model missing from the catalog"
+  },
+  {
+    "pl": "Brak przebiegu parta",
+    "en": "Missing road part path"
+  },
+  {
+    "pl": "Eksport ASC anulowany",
+    "en": "ASC export cancelled"
+  },
+  {
+    "pl": "Modyfikacja ASC anulowana",
+    "en": "ASC modification cancelled"
+  },
+  {
+    "pl": "Modyfikacja ASC wymaga rzeczywistej geometrii MLOD: {0}",
+    "en": "ASC modification requires actual MLOD geometry: {0}"
+  },
+  {
+    "pl": "Najpierw wygeneruj segmenty wybranej trasy",
+    "en": "First generate segments for the selected route"
+  },
+  {
+    "pl": "Brak poziomu rastra",
+    "en": "Missing raster level"
+  },
+  {
+    "pl": "Import anulowany",
+    "en": "Import cancelled"
+  },
+  {
+    "pl": "Indeks palety BMP",
+    "en": "BMP palette index"
+  },
+  {
+    "pl": "Kafelek poza obrazem",
+    "en": "Tile outside image bounds"
+  },
+  {
+    "pl": "Nadmiarowe wiersze PNG",
+    "en": "Excess PNG rows"
+  },
+  {
+    "pl": "Niepoprawny wiersz Adam7",
+    "en": "Invalid Adam7 row"
+  },
+  {
+    "pl": "Pusta piramida rastra",
+    "en": "Empty raster pyramid"
+  },
+  {
+    "pl": "Uszkodzona warstwa rastra",
+    "en": "Corrupted raster layer"
+  },
+  {
+    "pl": "Wybierz BMP lub PNG",
+    "en": "Choose BMP or PNG"
+  },
+  {
+    "pl": "Brak modelu",
+    "en": "Missing model"
+  },
+  {
+    "pl": "Brak modelu w katalogu",
+    "en": "Model missing from the catalog"
+  },
+  {
+    "pl": "Brak portu modelu",
+    "en": "Missing model port"
+  },
+  {
+    "pl": "Brak segmentu konec MLOD dla wybranego typu drogi. Dodaj go do definicji Road Tool i wczytaj modele",
+    "en": "No MLOD konec segment for the selected road type. Add it to Road Tool definitions and load models"
+  },
+  {
+    "pl": "Pusta droga",
+    "en": "Empty road"
+  },
+  {
+    "pl": "Trasa zawraca w jednym punkcie",
+    "en": "Route turns back at a single point"
+  },
+  {
+    "pl": "Punkty poza ASC lub w NODATA",
+    "en": "Points outside ASC or in NODATA"
+  },
+  {
+    "pl": "Wyznaczanie anulowane",
+    "en": "Routing cancelled"
+  },
+  {
+    "pl": "Import SHP anulowany",
+    "en": "SHP import cancelled"
+  },
+  {
+    "pl": "Rozmiar SHP",
+    "en": "SHP size"
+  },
+  {
+    "pl": "Rozmiar SHP M",
+    "en": "SHP M size"
+  },
+  {
+    "pl": "Rozmiar SHP Z",
+    "en": "SHP Z size"
+  },
+  {
+    "pl": "Brak nazwy pliku",
+    "en": "Missing filename"
+  },
+  {
+    "pl": "Zapis: {0}; przywracanie: {1}. Kopia: {2}",
+    "en": "Write: {0}; recovery: {1}. Backup: {2}"
+  },
+  {
+    "pl": "Brak {0}",
+    "en": "Missing {0}"
+  },
+  {
+    "pl": "Pusty plik ASC",
+    "en": "Empty ASC file"
+  },
+  {
+    "pl": "Rozmiar ASC",
+    "en": "ASC size"
+  },
+  {
+    "pl": "Brak pola Road Tool 0x{0}",
+    "en": "Missing Road Tool field 0x{0}"
+  },
+  {
+    "pl": "Brak pola modelu 0x{0}",
+    "en": "Missing model field 0x{0}"
+  },
+  {
+    "pl": "Brak pozycji w szablonie",
+    "en": "Missing position in template"
+  },
+  {
+    "pl": "Model poza definicjami TV4P",
+    "en": "Model outside TV4P definitions"
+  },
+  {
+    "pl": "Niejednoznaczne metadane TV4P 0x{0}",
+    "en": "Ambiguous TV4P metadata 0x{0}"
+  },
+  {
+    "pl": "Niezgodne ustawienia Road Tool 0x{0}",
+    "en": "Incompatible Road Tool settings 0x{0}"
+  },
+  {
+    "pl": "Typ",
+    "en": "Type"
+  },
+  {
+    "pl": "Wybierz zestaw narzędzi",
+    "en": "Choose your toolset"
+  },
+  {
+    "pl": "Scal projekty lub zaprojektuj nowe drogi.",
+    "en": "Merge projects or design new roads."
+  },
+  {
+    "pl": "Scalanie TV4P\nPodgląd, filtrowanie i eksport PNG",
+    "en": "Merge TV4P projects\nPreview, filtering and PNG export"
+  },
+  {
+    "pl": "Budowanie dróg\nSatelita, SHP, teren ASC i eksport TV4P",
+    "en": "Build roads\nSatellite, SHP, ASC terrain and TV4P export"
+  },
+  {
+    "pl": "Narzędzia",
+    "en": "Tools"
+  },
+  {
+    "pl": "Wszystkie drogi",
+    "en": "All roads"
+  },
+  {
+    "pl": "Tylko zaznaczona droga",
+    "en": "Selected road only"
+  },
+  {
+    "pl": "Pełny zasięg mapy z ustawień projektu; wyłącz, aby dopasować obraz do dróg.",
+    "en": "Full map bounds from project settings; disable to fit the image to roads."
+  },
+  {
+    "pl": "Eksport obejmuje istniejące drogi i dopasowane segmenty. Satelita, poziomice i szkice nie są eksportowane.",
+    "en": "Exports existing roads and fitted segments. Satellite, contours and sketches are excluded."
+  },
+  {
+    "pl": "Eksport PNG już trwa",
+    "en": "PNG export is already running"
+  },
+  {
+    "pl": "Eksport PNG musi mieć inną ścieżkę niż plik źródłowy",
+    "en": "PNG export must use a different path from the source file"
+  },
+  {
+    "pl": "{0} dróg",
+    "en": "{0} roads"
+  },
+  {
+    "pl": "Kolory typów dróg",
+    "en": "Road type colors"
+  },
+  {
+    "pl": "Wybrane kolory są używane także w PNG. Zaznaczenie w podglądzie pozostaje żółte.",
+    "en": "Chosen colors are also used in PNG. Preview selections remain yellow."
+  },
+  {
+    "pl": "Wczytaj drogi, aby zmienić kolory typów.",
+    "en": "Load roads to change type colors."
+  },
+  {
+    "pl": "Reset",
+    "en": "Reset"
+  },
+  {
+    "pl": "Przywróć domyślny kolor tego typu",
+    "en": "Restore the default color for this type"
+  }
+]

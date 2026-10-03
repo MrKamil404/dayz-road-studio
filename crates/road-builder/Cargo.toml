@@ -1,24 +1,23 @@
 [package]
-name = "tv4p_merge_roads"
-version = "1.1.0"
+name = "dayz-road-tool"
+version = "0.1.5"
 edition = "2024"
+description = "Desktop road editor for Terrain Builder TV4P projects"
 
 [dependencies]
-dayz-road-tool = { path = "crates/road-builder" }
 anyhow = "1"
 eframe = "0.31.1"
 rfd = "0.15.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+png = "0.18.1"
 image = { version = "0.25.10", default-features = false, features = ["png"] }
-
-[profile.release]
-lto = "thin"
-strip = true
+memmap2 = "0.9"
 
 [features]
 ui-screenshot = ["eframe/__screenshot"]
 
-[workspace]
-members = ["crates/road-builder"]
-resolver = "3"
+[dev-dependencies]
+flate2 = "1"
+crc32fast = "1"
+

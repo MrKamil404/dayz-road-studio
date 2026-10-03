@@ -19,4 +19,6 @@ env/
 *.log
 tv4p_merge_roads.exe
 /target/
+/.road-cache/
+*.dzroad
 /preview_roads.png

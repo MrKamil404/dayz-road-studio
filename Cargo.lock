@@ -777,6 +777,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 
 [[package]]
+name = "dayz-road-tool"
+version = "0.1.5"
+dependencies = [
+ "anyhow",
+ "crc32fast",
+ "eframe",
+ "flate2",
+ "image",
+ "memmap2",
+ "png",
+ "rfd",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3175,6 +3191,7 @@ name = "tv4p_merge_roads"
 version = "1.1.0"
 dependencies = [
  "anyhow",
+ "dayz-road-tool",
  "eframe",
  "image",
  "rfd",
