@@ -421,10 +421,17 @@ pub fn merge_report(a: &Path, b: &Path, out: &Path) -> Result<MergeReport> {
     let mut result = a[..ra.start].to_vec();
     result.extend(list);
     result.extend(&a[ra.end..]);
+    let road_start = ra.start;
+    let road_end = (road_start as i64 + (ra.end - ra.start) as i64 + delta) as usize;
     if delta != 0 {
         for tag in [0x3f, 0x18] {
             let positions: Vec<_> = (0..result.len().saturating_sub(6))
-                .filter(|p| result[*p..*p + 3] == [tag, 0, 13])
+                .filter(|p| {
+                    // Metadata belongs outside the parsed road list. Segment IDs and
+                    // other road payload can contain the same byte sequence.
+                    !(*p < road_end && *p + 7 > road_start)
+                        && result[*p..*p + 3] == [tag, 0, 13]
+                })
                 .collect();
             if positions.len() != 1 {
                 bail!("Ambiguous metadata offset 0x{tag:02X}")

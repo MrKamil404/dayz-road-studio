@@ -421,10 +421,17 @@ pub fn merge_report(a: &Path, b: &Path, out: &Path) -> Result<MergeReport> {
     let mut result = a[..ra.start].to_vec();
     result.extend(list);
     result.extend(&a[ra.end..]);
+    let road_start = ra.start;
+    let road_end = (road_start as i64 + (ra.end - ra.start) as i64 + delta) as usize;
     if delta != 0 {
         for tag in [0x3f, 0x18] {
             let positions: Vec<_> = (0..result.len().saturating_sub(6))
-                .filter(|p| result[*p..*p + 3] == [tag, 0, 13])
+                .filter(|p| {
+                    // Metadata belongs outside the parsed road list. Segment IDs and
+                    // other road payload can contain the same byte sequence.
+                    !(*p < road_end && *p + 7 > road_start)
+                        && result[*p..*p + 3] == [tag, 0, 13]
+                })
                 .collect();
             if positions.len() != 1 {
                 bail!("Ambiguous metadata offset 0x{tag:02X}")
@@ -889,10 +896,17 @@ pub fn export_editor(
     let mut result = b[..roads.start].to_vec();
     result.extend(list);
     result.extend(&b[roads.end..]);
+    let road_start = roads.start;
+    let road_end = (road_start as i64 + (roads.end - roads.start) as i64 + delta) as usize;
     if delta != 0 {
         for tag in [0x3f, 0x18] {
             let positions: Vec<_> = (0..result.len().saturating_sub(6))
-                .filter(|p| result[*p..*p + 3] == [tag, 0, 13])
+                .filter(|p| {
+                    // Metadata belongs outside the parsed road list. Segment IDs and
+                    // other road payload can contain the same byte sequence.
+                    !(*p < road_end && *p + 7 > road_start)
+                        && result[*p..*p + 3] == [tag, 0, 13]
+                })
                 .collect();
             if positions.len() != 1 {
                 bail!("Niejednoznaczne metadane TV4P 0x{tag:02X}");
@@ -1195,6 +1209,49 @@ mod editor_tests {
         fs::remove_dir_all(dir).unwrap();
     }
     #[test]
+    fn export_ignores_metadata_patterns_in_segment_ids() {
+        let dir = std::env::temp_dir().join(format!("road-metadata-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let base = dir.join("base.tv4p");
+        let out = dir.join("out.tv4p");
+        let mut bytes = fixture();
+        let original = block(&bytes, 0x8a).unwrap();
+        let root = &original.entries[0];
+        let body = &bytes[root.start..root.start + root.len];
+        let fs = fields(body).unwrap();
+        let child = &fs.iter().find(|f| f.tag == 0x92).unwrap().list.as_ref().unwrap()[0];
+        let id_offset = root.start + child.start + 2;
+        for id in [0x0d00183cu32, 0x0d003f3c] {
+            bytes[id_offset..id_offset + 4].copy_from_slice(&id.to_le_bytes());
+            std::fs::write(&base, &bytes).unwrap();
+            let c = catalog();
+            let mut doc = Document::default();
+            doc.routes.push(Route {
+                name: "metadata regression".into(),
+                family: "asf2".into(),
+                points: vec![],
+                parts: vec![PlacedPart {
+                    model: c[0].path.clone(),
+                    reverse: false,
+                    position: [200100., 200.],
+                    rotation: 0.,
+                }],
+                replaces: None,
+            });
+            export_editor(&base, &out, &doc, &c).unwrap();
+            let output = std::fs::read(&out).unwrap();
+            let result = block(&output, 0x8a).unwrap();
+            assert_eq!(result.entries.len(), 2);
+            let delta = (output.len() - bytes.len()) as u32;
+            assert_eq!(u32(&output, 3).unwrap(), 1000 + delta);
+            assert_eq!(u32(&output, 10).unwrap(), 2000 + delta);
+            let kept = &result.entries[0];
+            assert_eq!(&output[kept.start..kept.start + kept.len], &bytes[root.start..root.start + root.len]);
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn optional_local_tv4p_roundtrip() {
         let Ok(path) = std::env::var("ROAD_TEST_TV4P") else {
             return;
@@ -1212,6 +1269,17 @@ mod editor_tests {
             std::env::temp_dir().join(format!("real-road-roundtrip-{}.tv4p", std::process::id()));
         export_editor(&base, &out, &crate::document::Document::default(), &[]).unwrap();
         assert_eq!(fs::read(&out).unwrap(), bytes);
+        // Exercise metadata adjustment on the real project, not only a no-op export.
+        if let Some(last) = bl.entries.last() {
+            let mut doc = Document::default();
+            doc.deleted.push(last.id);
+            export_editor(&base, &out, &doc, &[]).unwrap();
+            let output = fs::read(&out).unwrap();
+            let changed = block(&output, 0x8a).unwrap();
+            assert_eq!(changed.entries.len() + 1, bl.entries.len());
+            assert!(!changed.entries.iter().any(|e| e.id == last.id));
+            assert_eq!(&output[changed.end..], &bytes[bl.end..]);
+        }
         fs::remove_file(out).unwrap();
     }
 }
