@@ -725,10 +725,10 @@ pub fn export_editor(
         .map(|e| &b[e.start..e.start + e.len])
         .collect();
     let original_ids: HashSet<_> = roads.entries.iter().map(|e| e.id).collect();
+    // Deletion is idempotent: a road absent from the base is already deleted.
+    // Replacements and transforms still require their original records.
     if doc
-        .deleted
-        .iter()
-        .chain(doc.routes.iter().filter_map(|r| r.replaces.as_ref()))
+        .routes.iter().filter_map(|r| r.replaces.as_ref())
         .chain(doc.transforms.iter().map(|t| &t.0))
         .any(|id| !original_ids.contains(id))
     {
@@ -1281,5 +1281,38 @@ mod editor_tests {
             assert_eq!(&output[changed.end..], &bytes[bl.end..]);
         }
         fs::remove_file(out).unwrap();
+    }
+
+    #[test]
+    fn deleting_absent_roads_is_safe_but_missing_edits_are_rejected() {
+        let dir = std::env::temp_dir().join(format!("road-delete-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let base = dir.join("base.tv4p");
+        let out = dir.join("out.tv4p");
+        let bytes = fixture();
+        fs::write(&base, &bytes).unwrap();
+        let mut doc = Document::default();
+        doc.deleted.push(999);
+        export_editor(&base, &out, &doc, &[]).unwrap();
+        assert_eq!(fs::read(&out).unwrap(), bytes);
+        doc.deleted.push(1);
+        export_editor(&base, &out, &doc, &[]).unwrap();
+        let deleted = fs::read(&out).unwrap();
+        assert!(block(&deleted, 0x8a).unwrap().entries.is_empty());
+        // Re-export the same deletions using an already exported base.
+        let again = dir.join("again.tv4p");
+        export_editor(&out, &again, &doc, &[]).unwrap();
+        assert_eq!(fs::read(&again).unwrap(), deleted);
+        doc.transforms.push((999, [1., 0.], 0.));
+        assert!(export_editor(&base, &out, &doc, &[]).is_err());
+        assert_eq!(fs::read(&out).unwrap(), deleted);
+        doc.transforms.clear();
+        doc.routes.push(Route {
+            name: "replacement".into(), family: "asf2".into(),
+            points: vec![], parts: vec![], replaces: Some(999),
+        });
+        assert!(export_editor(&base, &out, &doc, &[]).is_err());
+        assert_eq!(fs::read(&out).unwrap(), deleted);
+        fs::remove_dir_all(dir).unwrap();
     }
 }

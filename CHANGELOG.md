@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.2 — 2026-10-04
+
+### Fixed
+- TV4P export treats deletion of an already absent road as completed, allowing repeated exports against a base where that road has already been removed.
+- Missing roads referenced by transforms or replacements still block export before modifying the destination.
+- Regression tests cover mixed existing/absent deletions, repeated export and protection against missing edit targets.
+
 ## 2.1.1 — 2026-10-04
 
 ### Fixed
