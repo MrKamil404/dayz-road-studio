@@ -778,7 +778,7 @@ checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 
 [[package]]
 name = "dayz-road-tool"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "anyhow",
  "crc32fast",
@@ -3188,7 +3188,7 @@ checksum = "d2df906b07856748fa3f6e0ad0cbaa047052d4a7dd609e231c4f72cee8c36f31"
 
 [[package]]
 name = "tv4p_merge_roads"
-version = "2.0.1"
+version = "2.1.0"
 dependencies = [
  "anyhow",
  "dayz-road-tool",

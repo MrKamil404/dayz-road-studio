@@ -1,6 +1,6 @@
 [package]
 name = "dayz-road-tool"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2024"
 description = "Desktop road editor for Terrain Builder TV4P projects"
 

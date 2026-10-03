@@ -4,7 +4,7 @@ A Windows application for merging and designing roads in Terrain Builder `.tv4p`
 
 The same executable now includes **Road Builder**, integrated from DayZRoadToolExternal 0.1.5. Starting without a CLI command opens a launcher with **Merge** and **Road Builder**. After choosing a toolset, use the top tabs to switch; both tools retain their loaded projects, views, selections and work in progress for the current session. **Tools** returns to the launcher. The shared **Polski / English** selector covers both tools, including Builder dialogs and statuses. Background jobs continue while another tab is active. Closing checks Builder's unsaved changes even from Merge.
 
-Road Builder includes manual and live road drawing, MLOD segment fitting, SHP import, tiled satellite BMP/PNG, ASC terrain and contours, terrain routing, grading under road footprints, undo/redo, `.dzroad` project saving and TV4P/ASC export. See [the Road Builder guide](docs/road-builder.md). To transfer work between tools, export a TV4P file and open it in the other tool; switching tabs does not transfer projects automatically. Sessions are not restored automatically after restarting.
+Road Builder includes editing existing drawn route lines, manual and live road drawing, MLOD segment fitting, SHP import, tiled satellite BMP/PNG, ASC terrain and contours, terrain routing, grading under road footprints, undo/redo, `.dzroad` project saving and TV4P/ASC export. See [the Road Builder guide](docs/road-builder.md). To transfer work between tools, export a TV4P file and open it in the other tool; switching tabs does not transfer projects automatically. Sessions are not restored automatically after restarting.
 
 The Builder sources are included in `crates/road-builder`; building needs no neighbouring repository or separate Builder EXE. Its TV4P and geometry implementations remain separate from Merge to preserve the original editor's export behaviour.
 
@@ -22,7 +22,7 @@ Special thanks to **WoozyMasta** for [tv4p-road-tool](https://github.com/WoozyMa
 
 ## Version
 
-Current application version: **2.0.1** (`2.0.1` in Cargo). The application is named **DayZ Road Studio**. The executable remains `tv4p_merge_roads.exe` for compatibility with existing workflows. The version is shown in the window title and can be printed with `tv4p_merge_roads.exe --version`.
+Current application version: **2.1.0** (`2.1.0` in Cargo). The application is named **DayZ Road Studio**. The executable remains `tv4p_merge_roads.exe` for compatibility with existing workflows. The version is shown in the window title and can be printed with `tv4p_merge_roads.exe --version`.
 
 ## Changes in 2.0
 
@@ -198,3 +198,9 @@ Run tests and lint checks for both toolsets with `cargo test --workspace` and `c
 Road Builder also exports road geometry to PNG from its bottom bar. Choose all roads or the selected road, dimensions, alpha and map bounds. Map mode uses the origin and size in the Builder project settings; disabling it fits the image to the exported roads. Existing roads include current moves/rotations and exclude deleted/replaced roads. Generated segments are included; unfinished sketches, satellite and contours are excluded. PNG jobs continue while switching tabs.
 
 Both left panels include **Road type colors**. Click a type swatch to choose its RGB color; **Reset** restores the default. Merge shares its palette across A, B and Result for the current session. Builder stores its palette in `.dzroad` projects, including compatibility with older projects that have no palette. Custom type colors override yellow selection and green NEW markers in PNG; preview selections remain yellow and NEW labels remain available in Merge. Unconfigured types retain their existing colors. Palettes do not alter TV4P files.
+
+### Edit an existing drawn route
+
+Select a route on the map or in the project route list, then choose **Edit points**. Drag a point to reshape the line. Double-click a line segment to insert a point, or double-right-click a point to remove it (at least two points remain). You can select unfinished lines by clicking anywhere on the line. Drag away from handles to move the entire route. Point edits clear the previous fitted segments; use **Fit models to points** again before TV4P export. Undo/redo restores both the line and its fitted segments, and point edits are saved in the .dzroad project. This edits project route lines; imported TV4P roads retain their move/rotate controls.
+
+See [CHANGELOG.md](CHANGELOG.md) for release changes.

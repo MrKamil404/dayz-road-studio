@@ -11,8 +11,6 @@ pub const DEFAULT_MODELS: &str = "P:\\dz\\structures\\roads\\parts";
 pub const APP_NAME: &str = "DayZ Road Studio";
 pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
-        .strip_suffix(".0")
-        .unwrap_or(env!("CARGO_PKG_VERSION"))
 }
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
