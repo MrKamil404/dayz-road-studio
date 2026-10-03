@@ -5,6 +5,7 @@ use crate::{
     tv4p::{self, Project, Road},
 };
 use anyhow::Result;
+use dayz_road_tool::road_colors;
 use eframe::egui::{self, Color32, Pos2, Sense, Stroke, Vec2};
 use rfd::FileDialog;
 use std::{collections::BTreeSet, path::PathBuf, sync::mpsc, time::Duration};
@@ -53,16 +54,10 @@ fn number(text: &str) -> Option<f64> {
         .filter(|n| n.is_finite())
 }
 fn road_kind(r: &Road) -> String {
-    r.model
-        .rsplit(['\\', '/'])
-        .next()
-        .unwrap_or(&r.model)
-        .split('_')
-        .next()
-        .unwrap_or("")
-        .to_owned()
+    road_colors::family(&r.model)
 }
-struct App {
+pub(crate) struct App {
+    road_colors: road_colors::Palette,
     language: Language,
     datasets: [Dataset; 3],
     active: usize,
@@ -85,6 +80,7 @@ struct App {
 impl Default for App {
     fn default() -> Self {
         Self {
+            road_colors: Default::default(),
             language: Language::Polish,
             datasets: std::array::from_fn(|_| Dataset {
                 zoom: 1.,
@@ -110,6 +106,35 @@ impl Default for App {
     }
 }
 impl App {
+    pub(crate) fn new(language: Language) -> Self {
+        Self {
+            language,
+            ..Self::default()
+        }
+    }
+    pub(crate) fn set_language(&mut self, language: Language) {
+        self.language = language;
+    }
+    pub(crate) fn tick(&mut self, ctx: &egui::Context) {
+        let lang = self.language;
+        if let Some(job) = &self.png_job {
+            match job.try_recv() {
+                Ok(result) => {
+                    self.png_job = None;
+                    self.status(result);
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.png_job = None;
+                    self.status(Err(anyhow::anyhow!(
+                        lang.tr("Eksport PNG został przerwany")
+                    )));
+                }
+                Err(mpsc::TryRecvError::Empty) => {
+                    ctx.request_repaint_after(Duration::from_millis(250))
+                }
+            }
+        }
+    }
     fn status(&mut self, r: Result<String>) {
         match r {
             Ok(m) => {
@@ -249,20 +274,24 @@ impl App {
             let count = roads.len();
             let roads: Vec<Road> = roads.into_iter().cloned().collect();
             let selection = ds.selected.clone();
+            let palette = self.road_colors.clone();
             let (width, height, transparent) = (self.png_width, self.png_height, self.transparent);
             let (sender, receiver) = mpsc::channel();
             match std::thread::Builder::new()
                 .name("png-export".into())
                 .spawn(move || {
                     let refs = roads.iter().collect::<Vec<_>>();
-                    let result = render::png_in_bounds(
+                    let result = render::colored_png(
                         &path,
                         &refs,
                         &selection,
-                        width,
-                        height,
-                        transparent,
-                        map_bounds,
+                        &palette,
+                        render::PngOptions {
+                            width,
+                            height,
+                            transparent,
+                            map_bounds,
+                        },
                     )
                     .map(|_| {
                         format!(
@@ -283,36 +312,19 @@ impl App {
         }
     }
 }
-impl eframe::App for App {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+impl App {
+    pub(crate) fn show(&mut self, ctx: &egui::Context) {
         let lang = self.language;
-        if let Some(job) = &self.png_job {
-            match job.try_recv() {
-                Ok(result) => {
-                    self.png_job = None;
-                    self.status(result);
-                }
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    self.png_job = None;
-                    self.status(Err(anyhow::anyhow!(
-                        lang.tr("Eksport PNG został przerwany")
-                    )));
-                }
-                Err(mpsc::TryRecvError::Empty) => {
-                    ctx.request_repaint_after(Duration::from_millis(250))
-                }
-            }
-        }
+        self.tick(ctx);
         egui::TopBottomPanel::top("controls").show(ctx, |ui| {
             ui.spacing_mut().item_spacing = Vec2::new(6., 4.);
             ui.horizontal_wrapped(|ui| {
                 for i in 0..2 {
                     if ui.button(if i == 0 { "A…" } else { "B…" })
-                        .on_hover_text(lang.tr(if i == 0 { "Wczytaj A…" } else { "Wczytaj B…" })).clicked() {
-                        if let Some(path) = FileDialog::new()
+                        .on_hover_text(lang.tr(if i == 0 { "Wczytaj A…" } else { "Wczytaj B…" })).clicked()
+                        && let Some(path) = FileDialog::new()
                             .set_title(lang.tr(if i == 0 { "Wczytaj A…" } else { "Wczytaj B…" }))
                             .add_filter("Terrain Builder", &["tv4p"]).pick_file() { self.load(i, path); }
-                    }
                     let label = self.datasets[i].project.as_ref().and_then(|p| p.path.file_name())
                         .map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| lang.tr("brak pliku"));
                     let path = self.datasets[i].project.as_ref().map(|p| p.path.display().to_string()).unwrap_or_default();
@@ -321,23 +333,21 @@ impl eframe::App for App {
                 ui.separator();
                 ui.label(lang.tr("Wynik:"));
                 ui.add_sized([170., 22.], egui::TextEdit::singleline(&mut self.output)).on_hover_text(&self.output);
-                if ui.button("…").on_hover_text(lang.tr("Zapisz jako…")).clicked() {
-                    if let Some(path) = FileDialog::new().set_title(lang.tr("Zapisz jako…"))
+                if ui.button("…").on_hover_text(lang.tr("Zapisz jako…")).clicked()
+                    && let Some(path) = FileDialog::new().set_title(lang.tr("Zapisz jako…"))
                         .add_filter("TV4P", &["tv4p"]).set_file_name("output.tv4p").save_file() {
                         self.output = path.to_string_lossy().into();
                     }
-                }
                 if ui.add_enabled(self.datasets[0].project.is_some() && self.datasets[1].project.is_some(),
                     egui::Button::new(lang.tr("Scal drogi"))).clicked() { self.merge(); }
                 ui.separator();
                 ui.label("MLOD").on_hover_text(lang.tr("Modele MLOD:"));
                 ui.add_sized([190., 22.], egui::TextEdit::singleline(&mut self.model_root)).on_hover_text(&self.model_root);
                 let mut reload = ui.button(lang.tr("Zastosuj")).clicked();
-                if ui.button("…").on_hover_text(lang.tr("Folder…")).clicked() {
-                    if let Some(path) = FileDialog::new().set_title(lang.tr("Wybierz folder modeli MLOD")).pick_folder() {
+                if ui.button("…").on_hover_text(lang.tr("Folder…")).clicked()
+                    && let Some(path) = FileDialog::new().set_title(lang.tr("Wybierz folder modeli MLOD")).pick_folder() {
                         self.model_root = path.to_string_lossy().into(); reload = true;
                     }
-                }
                 if reload {
                     self.library = Library::new(PathBuf::from(&self.model_root));
                     let active = self.active;
@@ -389,12 +399,9 @@ impl eframe::App for App {
         });
         egui::TopBottomPanel::bottom("export").show(ctx, |ui| {
             ui.spacing_mut().item_spacing = Vec2::new(5., 3.);
-            let start = ui.cursor().min;
             let width = ui.available_width();
-            // Reserve a fixed slot at the right; wrapped settings cannot move
-            // the language selector away from the bottom-right corner.
-            let settings_width = (width - 165.).max(100.);
-            let settings = ui.allocate_ui_with_layout(Vec2::new(settings_width, 24.),
+            let settings_width = width.max(100.);
+             ui.allocate_ui_with_layout(Vec2::new(settings_width, 24.),
                 egui::Layout::top_down(egui::Align::Min), |ui| {
                 ui.horizontal_wrapped(|ui| {
                     ui.label("PNG:");
@@ -436,23 +443,19 @@ impl eframe::App for App {
                     ui.label(count.to_string()).on_hover_text(lang.tr(&format!("Do eksportu: {count} dróg")));
                 });
             });
-            let bottom = start.y + settings.response.rect.height().max(24.);
-            let language_rect = egui::Rect::from_min_size(Pos2::new(start.x + width - 160., bottom - 24.), Vec2::new(160., 24.));
-            ui.scope_builder(egui::UiBuilder::new().max_rect(language_rect).layout(egui::Layout::right_to_left(egui::Align::Center)), |ui| {
-                let previous = self.language;
-                egui::ComboBox::from_id_salt("language").width(85.)
-                    .selected_text(if self.language == Language::Polish { "Polski" } else { "English" })
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut self.language, Language::Polish, "Polski");
-                        ui.selectable_value(&mut self.language, Language::English, "English");
-                    });
-                ui.label(lang.tr("Język"));
-                if previous != self.language {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!("{} {}", self.language.tr("Scalanie dróg Terrain Builder"), crate::version())));
-                    ctx.request_repaint();
-                }
-            });
+
         });
+        let color_types = self
+            .datasets
+            .iter()
+            .filter_map(|dataset| dataset.project.as_ref())
+            .flat_map(|project| project.roads.iter().map(road_kind))
+            .chain(self.road_colors.keys().cloned())
+            .collect();
+        let color_language = match lang {
+            Language::Polish => dayz_road_tool::i18n::Language::Polish,
+            Language::English => dayz_road_tool::i18n::Language::English,
+        };
         let ds = &mut self.datasets[self.active];
         egui::SidePanel::left("roads")
             .default_width(345.)
@@ -460,6 +463,7 @@ impl eframe::App for App {
             .resizable(true)
             .show(ctx, |ui| {
                 ui.heading(lang.tr("Lista dróg"));
+                road_colors::editor(ui, &color_types, &mut self.road_colors, color_language);
                 let Some(p) = ds.project.as_ref() else {
                     ui.label(lang.tr("Wczytaj plik."));
                     return;
@@ -593,22 +597,21 @@ impl eframe::App for App {
                     }
                 });
             });
-        egui::CentralPanel::default().show(ctx, |ui| map(ui, ds, lang));
+        egui::CentralPanel::default().show(ctx, |ui| map(ui, ds, lang, &self.road_colors));
     }
 }
-fn map(ui: &mut egui::Ui, ds: &mut Dataset, lang: Language) {
+fn map(ui: &mut egui::Ui, ds: &mut Dataset, lang: Language, palette: &road_colors::Palette) {
     ui.horizontal_wrapped(|ui| {
         ui.heading(lang.tr("Podgląd dróg"));
         if ui.button(lang.tr("Dopasuj widoczne")).clicked() {
             ds.reset_view()
         }
-        if ui.button(lang.tr("Dopasuj zaznaczone")).clicked() {
-            if let Some(p) = &ds.project {
-                ds.focus =
-                    render::bounds(p.roads.iter().filter(|r| ds.selected.contains(&r.index)));
-                ds.zoom = 1.;
-                ds.pan = Vec2::ZERO;
-            }
+        if ui.button(lang.tr("Dopasuj zaznaczone")).clicked()
+            && let Some(p) = &ds.project
+        {
+            ds.focus = render::bounds(p.roads.iter().filter(|r| ds.selected.contains(&r.index)));
+            ds.zoom = 1.;
+            ds.pan = Vec2::ZERO;
         }
         if ui.button("−").clicked() {
             ds.zoom = (ds.zoom / 1.3).clamp(0.05, 200.)
@@ -675,7 +678,11 @@ fn map(ui: &mut egui::Ui, ds: &mut Dataset, lang: Language) {
             if marked != selected {
                 continue;
             }
-            let c = render::color(selected, any, r.is_new);
+            let c = if !selected && let Some(rgb) = palette.get(&road_kind(r)) {
+                [rgb[0], rgb[1], rgb[2], 255]
+            } else {
+                render::color(selected, any, r.is_new)
+            };
             let color = Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]);
             let mut mesh = egui::Mesh::default();
             for t in &r.shape.triangles {
@@ -717,10 +724,8 @@ fn map(ui: &mut egui::Ui, ds: &mut Dataset, lang: Language) {
                 "#{} · {:.1} m · {} części",
                 r.id, r.shape.length, r.parts
             )));
-            if response.clicked() {
-                if !ds.selected.remove(&index) {
-                    ds.selected.insert(index);
-                }
+            if response.clicked() && !ds.selected.remove(&index) {
+                ds.selected.insert(index);
             }
         }
     }
@@ -741,29 +746,22 @@ fn map(ui: &mut egui::Ui, ds: &mut Dataset, lang: Language) {
     }
 }
 pub fn run(language: Language) -> Result<()> {
-    let mut viewport = egui::ViewportBuilder::default()
-        .with_inner_size([1380., 900.])
-        .with_min_inner_size([1050., 700.]);
-    if let Ok(icon) = eframe::icon_data::from_png_bytes(include_bytes!("../app_icon.png")) {
-        viewport = viewport.with_icon(icon)
+    crate::shell::run(language)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn inactive_png_export_finishes_without_rendering_merge() {
+        let mut app = App::new(Language::Polish);
+        let (sender, receiver) = mpsc::channel();
+        app.png_job = Some(receiver);
+        sender.send(Ok("Zapisano test.png".into())).unwrap();
+        app.tick(&egui::Context::default());
+        assert!(app.png_job.is_none());
+        assert!(!app.error);
+        assert_eq!(app.message, "Zapisano test.png");
     }
-    eframe::run_native(
-        &format!(
-            "{} {}",
-            language.tr("Scalanie dróg Terrain Builder"),
-            crate::version()
-        ),
-        eframe::NativeOptions {
-            viewport,
-            ..Default::default()
-        },
-        Box::new(move |ctx| {
-            ctx.egui_ctx.set_visuals(egui::Visuals::dark());
-            Ok(Box::new(App {
-                language,
-                ..App::default()
-            }))
-        }),
-    )
-    .map_err(|e| anyhow::anyhow!("{e}"))
 }

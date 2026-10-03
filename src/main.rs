@@ -2,6 +2,7 @@ mod geometry;
 mod gui;
 mod i18n;
 mod render;
+mod shell;
 mod tv4p;
 use anyhow::{Result, bail};
 use i18n::Language;

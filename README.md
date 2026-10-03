@@ -2,6 +2,12 @@
 
 A Windows application for merging roads from `.tv4p` projects, with geometry previews, filtering, selection and PNG export. The application is written in Rust.
 
+The same executable now includes **Road Builder**, integrated from DayZRoadToolExternal 0.1.5. Starting without a CLI command opens a launcher with **Merge** and **Road Builder**. After choosing a toolset, use the top tabs to switch; both tools retain their loaded projects, views, selections and work in progress for the current session. **Tools** returns to the launcher. The shared **Polski / English** selector covers both tools, including Builder dialogs and statuses. Background jobs continue while another tab is active. Closing checks Builder's unsaved changes even from Merge.
+
+Road Builder includes manual and live road drawing, MLOD segment fitting, SHP import, tiled satellite BMP/PNG, ASC terrain and contours, terrain routing, grading under road footprints, undo/redo, `.dzroad` project saving and TV4P/ASC export. See [the Road Builder guide](docs/road-builder.md). To transfer work between tools, export a TV4P file and open it in the other tool; switching tabs does not transfer projects automatically. Sessions are not restored automatically after restarting.
+
+The Builder sources are included in `crates/road-builder`; building needs no neighbouring repository or separate Builder EXE. Its TV4P and geometry implementations remain separate from Merge to preserve the original editor's export behaviour.
+
 ![tv4p_merge_roads 1.1 interace](https://raw.githubusercontent.com/MrKamil404/Terrain-Builder-Road-Merger/refs/heads/main/images/prev1.png)
 
 > [!CAUTION]
@@ -27,7 +33,7 @@ Current application version: **1.1** (`1.1.0` in Cargo). The version is shown in
 
 ## Application language
 
-Change the language using the selector fixed in the bottom-right corner of the application. Existing statuses and warnings also change language without reloading the project. Polish is the default. Model names, paths, IDs and units stay unchanged. Standard controls in native file dialogs and operating-system error details use the Windows system language.
+Change the language using the selector in the top navigation bar of the application. Existing statuses and warnings also change language without reloading the project. Polish is the default. Model names, paths, IDs and units stay unchanged. Standard controls in native file dialogs and operating-system error details use the Windows system language.
 
 Use `--lang` before a command to choose the GUI or CLI language:
 
@@ -46,7 +52,7 @@ Run `python tools/check_translations.py` to audit catalog coverage and message p
 ### Merge projects
 
 1. Back up both input projects. Use **A** as the main project and **B** as the road donor. Both projects must have matching Road Tool road type and junction definitions.
-2. Run `tv4p_merge_roads.exe` without a command. For the English interface, run `.\tv4p_merge_roads.exe --lang en`, or use the language selector in the bottom-right corner.
+2. Run `tv4p_merge_roads.exe` without a command and choose **Merge** in the launcher. For the English interface, run `.\tv4p_merge_roads.exe --lang en`, or use the language selector in the top navigation bar.
 3. Check the **MLOD** folder in the top bar. Its default is `P:\dz\structures\roads\parts`. Use the `…` button beside this field to choose a folder, or edit the path and click **Apply**. Review any model warnings.
 4. Click **A…** to load the main project, then **B…** to load the donor. Use **File A** and **File B** to inspect their road lists and previews.
 5. Enter an output path in **Output**, or use the `…` button beside it (**Save as** in the tooltip). Choose a file different from both inputs.
@@ -73,7 +79,7 @@ Run `python tools/check_translations.py` to audit catalog coverage and message p
 
 The A, B and Result tabs have separate road lists, selections and view settings.
 
-Project controls remain at the top, the road list on the left, the preview in the centre and PNG export settings at the bottom. Both control bars are compact and keep their settings on one line when there is enough space; settings wrap on narrower windows. The language selector stays in the bottom-right corner. Short labels and buttons provide full descriptions in tooltips. The application theme is unchanged.
+Project controls remain at the top, the road list on the left, the preview in the centre and PNG export settings at the bottom. Both control bars are compact and keep their settings on one line when there is enough space; settings wrap on narrower windows. The language selector stays in the top navigation bar. Short labels and buttons provide full descriptions in tooltips. Both toolsets use the same dark theme, blue roads and yellow selections.
 
 - Search by ID or road part names. Additional filters cover road type, length range and selected roads only.
 - Click a row or road on the map to toggle selection. Selected roads are yellow. Select all visible roads or clear the selection using the corresponding buttons.
@@ -174,3 +180,9 @@ cargo build --release
 ```
 
 Executable: `target\release\tv4p_merge_roads.exe`.
+
+Run tests and lint checks for both toolsets with `cargo test --workspace` and `cargo clippy --workspace --all-targets -- -D warnings`. `python tools/check_translations.py` audits both translation catalogs. The optional `ui-screenshot` feature supports the eframe development screenshot mechanism; normal builds do not require it.
+
+Road Builder also exports road geometry to PNG from its bottom bar. Choose all roads or the selected road, dimensions, alpha and map bounds. Map mode uses the origin and size in the Builder project settings; disabling it fits the image to the exported roads. Existing roads include current moves/rotations and exclude deleted/replaced roads. Generated segments are included; unfinished sketches, satellite and contours are excluded. PNG jobs continue while switching tabs.
+
+Both left panels include **Road type colors**. Click a type swatch to choose its RGB color; **Reset** restores the default. Merge shares its palette across A, B and Result for the current session. Builder stores its palette in `.dzroad` projects, including compatibility with older projects that have no palette. Custom type colors override yellow selection and green NEW markers in PNG; preview selections remain yellow and NEW labels remain available in Merge. Unconfigured types retain their existing colors. Palettes do not alter TV4P files.

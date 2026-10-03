@@ -372,12 +372,12 @@ pub fn merge_report(a: &Path, b: &Path, out: &Path) -> Result<MergeReport> {
     let mut used = HashSet::new();
     for data in [&a, &b] {
         for p in 0..data.len().saturating_sub(12) {
-            if data.get(p..p + 3) == Some(MAGIC) {
-                if let (Ok(len), Ok(id)) = (u32(data, p + 3), u32(data, p + 9)) {
-                    if len >= 6 && p + 7 + len as usize <= data.len() {
-                        used.insert(id);
-                    }
-                }
+            if data.get(p..p + 3) == Some(MAGIC)
+                && let (Ok(len), Ok(id)) = (u32(data, p + 3), u32(data, p + 9))
+                && len >= 6
+                && p + 7 + len as usize <= data.len()
+            {
+                used.insert(id);
             }
         }
     }

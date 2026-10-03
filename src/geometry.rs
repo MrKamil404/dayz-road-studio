@@ -278,8 +278,8 @@ mod tests {
             if !memory {
                 for face in [[0, 1, 2], [0, 2, 3]] {
                     word(&mut b, 3);
-                    for i in 0..4 {
-                        word(&mut b, if i < 3 { face[i] } else { 0 });
+                    for index in face.into_iter().chain(std::iter::once(0)) {
+                        word(&mut b, index);
                         for _ in 0..3 {
                             word(&mut b, 0);
                         }

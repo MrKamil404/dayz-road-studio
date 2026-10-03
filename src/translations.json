@@ -534,5 +534,45 @@
   {
     "pl": "Mapa",
     "en": "Map"
+  },
+  {
+    "pl": "Wybierz zestaw narzędzi",
+    "en": "Choose your toolset"
+  },
+  {
+    "pl": "Scal projekty lub zaprojektuj nowe drogi.",
+    "en": "Merge projects or design new roads."
+  },
+  {
+    "pl": "Scalanie TV4P\nPodgląd, filtrowanie i eksport PNG",
+    "en": "Merge TV4P projects\nPreview, filtering and PNG export"
+  },
+  {
+    "pl": "Budowanie dróg\nSatelita, SHP, teren ASC i eksport TV4P",
+    "en": "Build roads\nSatellite, SHP, ASC terrain and TV4P export"
+  },
+  {
+    "pl": "Narzędzia",
+    "en": "Tools"
+  },
+  {
+    "pl": "Kolory typów dróg",
+    "en": "Road type colors"
+  },
+  {
+    "pl": "Wybrane kolory są używane także w PNG. Zaznaczenie w podglądzie pozostaje żółte.",
+    "en": "Chosen colors are also used in PNG. Preview selections remain yellow."
+  },
+  {
+    "pl": "Wczytaj drogi, aby zmienić kolory typów.",
+    "en": "Load roads to change type colors."
+  },
+  {
+    "pl": "Reset",
+    "en": "Reset"
+  },
+  {
+    "pl": "Przywróć domyślny kolor tego typu",
+    "en": "Restore the default color for this type"
   }
 ]
