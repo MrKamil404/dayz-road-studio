@@ -236,12 +236,12 @@
     "en": "Choose the MLOD models folder"
   },
   {
-    "pl": "Szerokość i wysokość PNG muszą mieścić się w zakresie 128–32768 px",
-    "en": "PNG width and height must be between 128 and 32768 px"
+    "pl": "Szerokość i wysokość PNG muszą mieścić się w zakresie 128–20480 px",
+    "en": "PNG width and height must be between 128 and 20480 px"
   },
   {
-    "pl": "PNG może mieć maksymalnie 268 435 456 pikseli (np. 16384 × 16384)",
-    "en": "PNG may contain at most 268,435,456 pixels (e.g. 16384 × 16384)"
+    "pl": "PNG może mieć maksymalnie 419 430 400 pikseli (np. 20480 × 20480)",
+    "en": "PNG may contain at most 419,430,400 pixels (e.g. 20480 × 20480)"
   },
   {
     "pl": "Nieprawidłowe granice mapy",

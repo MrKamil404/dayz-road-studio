@@ -77,14 +77,28 @@ pub fn png(
     png_in_bounds(path, roads, selection, width, height, transparent, None)
 }
 pub fn validate_dimensions(width: u32, height: u32) -> Result<()> {
-    if !(128..=32768).contains(&width) || !(128..=32768).contains(&height) {
-        bail!("Szerokość i wysokość PNG muszą mieścić się w zakresie 128–32768 px")
+    if !(128..=20480).contains(&width) || !(128..=20480).contains(&height) {
+        bail!("Szerokość i wysokość PNG muszą mieścić się w zakresie 128–20480 px")
     }
-    if u64::from(width) * u64::from(height) > 268_435_456 {
-        bail!("PNG może mieć maksymalnie 268 435 456 pikseli (np. 16384 × 16384)")
+    if u64::from(width) * u64::from(height) > 419_430_400 {
+        bail!("PNG może mieć maksymalnie 419 430 400 pikseli (np. 20480 × 20480)")
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod dimension_tests {
+    use super::validate_dimensions;
+
+    #[test]
+    fn accepts_maximum_png_and_rejects_larger_sides() {
+        assert!(validate_dimensions(20480, 20480).is_ok());
+        assert!(validate_dimensions(20481, 128).is_err());
+        assert!(validate_dimensions(128, 20481).is_err());
+        assert!(validate_dimensions(127, 20480).is_err());
+    }
+}
+
 pub fn png_in_bounds(
     path: &Path,
     roads: &[Road<'_>],

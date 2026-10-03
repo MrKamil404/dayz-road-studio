@@ -413,9 +413,9 @@ impl App {
                         });
                     ui.checkbox(&mut self.transparent, lang.tr("Alfa")).on_hover_text(lang.tr("Przezroczyste tło"));
                     ui.label("px").on_hover_text(lang.tr("Rozdzielczość PNG [px]"));
-                    ui.add_sized([54., 22.], egui::DragValue::new(&mut self.png_width).range(128..=32768));
+                    ui.add_sized([54., 22.], egui::DragValue::new(&mut self.png_width).range(128..=20480));
                     ui.label("×");
-                    ui.add_sized([54., 22.], egui::DragValue::new(&mut self.png_height).range(128..=32768));
+                    ui.add_sized([54., 22.], egui::DragValue::new(&mut self.png_height).range(128..=20480));
                     if ui.small_button("15360²").on_hover_text("15360 × 15360").clicked() { self.png_width = 15360; self.png_height = 15360; }
                     ui.separator();
                     ui.checkbox(&mut self.full_map, lang.tr("Mapa")).on_hover_text(lang.tr(if self.full_map {

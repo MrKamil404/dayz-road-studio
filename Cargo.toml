@@ -1,6 +1,6 @@
 [package]
 name = "tv4p_merge_roads"
-version = "2.0.0"
+version = "2.0.1"
 description = "DayZ Road Studio — Terrain Builder road merging and design tools"
 edition = "2024"
 

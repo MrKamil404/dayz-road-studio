@@ -188,9 +188,9 @@ impl App {
                     });
                 ui.checkbox(&mut self.png_settings.transparent, lang.tr("Alfa"));
                 ui.label("px");
-                ui.add(egui::DragValue::new(&mut self.png_settings.width).range(128..=32768));
+                ui.add(egui::DragValue::new(&mut self.png_settings.width).range(128..=20480));
                 ui.label("×");
-                ui.add(egui::DragValue::new(&mut self.png_settings.height).range(128..=32768));
+                ui.add(egui::DragValue::new(&mut self.png_settings.height).range(128..=20480));
                 if ui.button("15360²").clicked() { self.png_settings.width = 15360; self.png_settings.height = 15360; }
                 ui.checkbox(&mut self.png_settings.full_map, lang.tr("Mapa"))
                     .on_hover_text(lang.tr("Pełny zasięg mapy z ustawień projektu; wyłącz, aby dopasować obraz do dróg."));
@@ -2275,8 +2275,9 @@ mod tests {
         assert_eq!(image.get_pixel(0, 0).0, [15, 23, 37, 255]);
         app.png_settings.selected_only = true;
         assert!(app.start_png(dir.join("empty.png")).is_err());
-        app.png_settings.width = 32768;
-        app.png_settings.height = 32768;
+        app.png_settings.selected_only = false;
+        app.png_settings.width = 20481;
+        app.png_settings.height = 20480;
         assert!(app.start_png(dir.join("too-large.png")).is_err());
         std::fs::remove_dir_all(dir).unwrap();
     }
