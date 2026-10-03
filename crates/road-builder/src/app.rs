@@ -47,6 +47,7 @@ impl Default for PngSettings {
 #[derive(Clone, Copy, PartialEq)]
 enum Tool {
     Select,
+    Edit,
     Draw,
     Live,
     Segments,
@@ -891,6 +892,28 @@ impl App {
             },
         );
     }
+    fn insert_route_point(&mut self, index: usize, segment: usize, point: Point) {
+        if self.doc.routes.get(index).is_none_or(|r| segment + 1 >= r.points.len()) {
+            return;
+        }
+        self.checkpoint();
+        let route = &mut self.doc.routes[index];
+        route.points.insert(segment + 1, point);
+        route.parts.clear();
+        self.rebuild();
+    }
+
+    fn remove_route_point(&mut self, index: usize, point: usize) {
+        if self.doc.routes.get(index).is_none_or(|r| r.points.len() <= 2 || point >= r.points.len()) {
+            return;
+        }
+        self.checkpoint();
+        let route = &mut self.doc.routes[index];
+        route.points.remove(point);
+        route.parts.clear();
+        self.rebuild();
+    }
+
     fn export(&mut self) {
         let lang = self.language;
         if self.tool == Tool::Live && !self.draft.is_empty() {
@@ -1007,7 +1030,7 @@ if ui.button(lang.tr("Ponów")).on_hover_text(lang.tr("Ponów · Ctrl+Y")).click
             });
         });
         egui::SidePanel::left("library").default_width(260.).show(ctx,|ui|{
-            ui.heading(lang.tr("Warsztat dróg"));self.color_controls(ui);ui.add_enabled_ui(!busy,|ui|{ui.horizontal_wrapped(|ui|{for (tool,label) in [(Tool::Select,"Wybierz"),(Tool::Draw,"Rysuj"),(Tool::Live,"Na żywo"),(Tool::Segments,"Segmenty"),(Tool::Forbidden,"Zakaz")] {if ui.selectable_label(self.tool==tool,lang.tr(label)).clicked(){self.tool=tool;self.draft.clear();self.clear_live();}}});
+            ui.heading(lang.tr("Warsztat dróg"));self.color_controls(ui);ui.add_enabled_ui(!busy,|ui|{ui.horizontal_wrapped(|ui|{for (tool,label) in [(Tool::Select,"Wybierz"),(Tool::Edit,"Edytuj punkty"),(Tool::Draw,"Rysuj"),(Tool::Live,"Na żywo"),(Tool::Segments,"Segmenty"),(Tool::Forbidden,"Zakaz")] {if ui.selectable_label(self.tool==tool,lang.tr(label)).clicked(){self.tool=tool;self.draft.clear();self.clear_live();}}});
             if ui.button(lang.tr("Folder modeli MLOD…")).clicked() && let Some(p)=rfd::FileDialog::new().pick_folder(){self.doc.models=p;self.dirty=true;if let Some(p)=self.doc.base.clone(){self.load_base(p);}}
             ui.small(lang.tr(&(self.doc.models.display().to_string())));
             let families:BTreeSet<_>=self.catalog.iter().map(|p|p.family.clone()).collect();egui::ComboBox::from_label(lang.tr("Typ")).selected_text(lang.tr(&self.family)).show_ui(ui,|ui|{for f in families {ui.selectable_value(&mut self.family,f.clone(),lang.tr(&(f)));}});
@@ -1022,10 +1045,12 @@ if ui.button(lang.tr("Ponów")).on_hover_text(lang.tr("Ponów · Ctrl+Y")).click
 if ui.button(lang.tr("Usuń ostatni punkt")).clicked(){self.draft.pop();self.clear_live();}
                 if self.tool==Tool::Live{ui.small(lang.tr("Zielone segmenty: przewidywany przebieg. Klik zatwierdza poprawne dopasowanie. Enter zapisuje gotową drogę."));}
             }
+            if self.tool==Tool::Edit {ui.small(lang.tr("Przeciągnij punkt, aby zmienić trasę. Podwójny klik na linii dodaje punkt; podwójny prawy klik na punkcie usuwa go. Po edycji dopasuj modele ponownie."));}
             ui.separator();ui.heading(lang.tr("Trasy projektu"));
             let rows:Vec<_>=self.doc.routes.iter().enumerate().map(|(i,r)|(i,format!("{} · {} części",r.name,r.parts.len()))).collect();
             egui::ScrollArea::vertical().max_height(240.).show(ui,|ui|{for (i,label) in rows {if ui.selectable_label(self.selected==Some(Selection::Route(i)),lang.tr(&label)).clicked(){self.selected=Some(Selection::Route(i));}}});
             if let Some(Selection::Route(i))=self.selected {
+                if ui.button(lang.tr("Edytuj punkty")).clicked(){self.tool=Tool::Edit;self.draft.clear();self.clear_live();}
                 if let Some(r)=self.doc.routes.get_mut(i) && ui.text_edit_singleline(&mut r.name).changed(){self.dirty=true;}
 if ui.button(lang.tr("Ustaw typ wybranej trasy")).clicked(){self.checkpoint();self.doc.routes[i].family=self.family.clone();self.doc.routes[i].parts.clear();self.rebuild();}
                 if ui.button(lang.tr("Dopasuj modele do punktów")).clicked(){self.generate(false);}
@@ -1851,7 +1876,30 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
         }
         let busy = !self.jobs.is_empty() || self.shp_dialog.is_some();
         if !busy {
+            let editing_click = self.tool == Tool::Edit
+                && (response.double_clicked() || response.double_clicked_by(egui::PointerButton::Secondary));
+            if editing_click
+                && let Some(Selection::Route(index)) = self.selected
+                && let Some(pos) = response.interact_pointer_pos()
+            {
+                let points = &self.doc.routes[index].points;
+                if response.double_clicked_by(egui::PointerButton::Secondary) {
+                    if let Some(point) = points.iter().position(|p| self.screen(*p, rect).distance(pos) < 12.) {
+                        self.remove_route_point(index, point);
+                    }
+                } else if let Some((segment, _)) = points.windows(2).enumerate()
+                    .map(|(i, w)| (i, distance_to_segment(pos, self.screen(w[0], rect), self.screen(w[1], rect))))
+                    .filter(|(_, d)| *d < 12.)
+                    .min_by(|a, b| a.1.total_cmp(&b.1))
+                {
+                    if !points.iter().any(|p| self.screen(*p, rect).distance(pos) < 8.) {
+                        let world = self.world(pos, rect);
+                        self.insert_route_point(index, segment, world);
+                    }
+                }
+            }
             if response.clicked()
+                && !editing_click
                 && let Some(pos) = response.interact_pointer_pos()
             {
                 let world = self.world(pos, rect);
@@ -1880,7 +1928,7 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
                         self.selected = Some(Selection::Route(i));
                         self.add_segment();
                     }
-                    Tool::Select => {
+                    Tool::Select | Tool::Edit => {
                         let mut best = 10.;
                         let mut selected = None;
                         for i in &visible {
@@ -1900,6 +1948,13 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
                             }
                         }
                         for (i, r) in self.doc.routes.iter().enumerate() {
+                            for w in r.points.windows(2) {
+                                let d = distance_to_segment(pos, self.screen(w[0], rect), self.screen(w[1], rect));
+                                if d < best {
+                                    best = d;
+                                    selected = Some(Selection::Route(i));
+                                }
+                            }
                             for p in &r.points {
                                 if self.screen(*p, rect).distance(pos) < best {
                                     selected = Some(Selection::Route(i));
@@ -1911,7 +1966,7 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
                     }
                 }
             }
-            if response.drag_started_by(egui::PointerButton::Primary) && self.tool == Tool::Select {
+            if response.drag_started_by(egui::PointerButton::Primary) && matches!(self.tool, Tool::Select | Tool::Edit) {
                 self.drag_snapshot = false;
                 self.drag_point = None;
                 if let Some(Selection::Route(i)) = self.selected
@@ -1924,7 +1979,7 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
                 }
             }
             if response.dragged_by(egui::PointerButton::Primary)
-                && self.tool == Tool::Select
+                && matches!(self.tool, Tool::Select | Tool::Edit)
                 && let Some(selection) = self.selected
             {
                 if !self.drag_snapshot {
@@ -2154,6 +2209,37 @@ fn distance_to_segment(p: Pos2, a: Pos2, b: Pos2) -> f32 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn editing_line_points_preserves_route_and_supports_undo_redo() {
+        let mut app = super::App::new();
+        app.doc.routes.push(dayz_road_tool::document::Route {
+            name: "Existing line".into(), family: "asf2".into(),
+            points: vec![[0., 0.], [100., 0.]],
+            parts: vec![dayz_road_tool::roads::PlacedPart {
+                model: "asf2_25.p3d".into(), reverse: false,
+                position: [0., 0.], rotation: 0.,
+            }], replaces: Some(42),
+        });
+        app.insert_route_point(0, 0, [50., 10.]);
+        assert_eq!(app.doc.routes[0].points, vec![[0., 0.], [50., 10.], [100., 0.]]);
+        assert!(app.doc.routes[0].parts.is_empty());
+        assert_eq!(app.doc.routes[0].replaces, Some(42));
+        assert!(app.dirty);
+        app.undo(false);
+        assert_eq!(app.doc.routes[0].points.len(), 2);
+        assert_eq!(app.doc.routes[0].parts.len(), 1);
+        app.undo(true);
+        assert_eq!(app.doc.routes[0].points.len(), 3);
+        app.remove_route_point(0, 1);
+        assert_eq!(app.doc.routes[0].points, vec![[0., 0.], [100., 0.]]);
+        let undo_count = app.undo.len();
+        app.remove_route_point(0, 0);
+        assert_eq!(app.undo.len(), undo_count);
+        let saved = serde_json::to_vec(&app.doc).unwrap();
+        let restored: dayz_road_tool::document::Document = serde_json::from_slice(&saved).unwrap();
+        assert_eq!(restored.routes[0].points, app.doc.routes[0].points);
+        assert_eq!(restored.routes[0].replaces, Some(42));
+    }
     use super::*;
 
     #[test]
