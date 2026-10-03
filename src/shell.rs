@@ -115,7 +115,7 @@ impl Shell {
         let lang = self.language;
         egui::TopBottomPanel::top("toolsets").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.strong("DAYZ ROAD TOOLS");
+                ui.strong("DAYZ ROAD STUDIO");
                 ui.separator();
                 if ui
                     .selectable_label(self.active == Toolset::Launcher, lang.tr("Narzędzia"))
@@ -154,7 +154,8 @@ impl Shell {
             self.merge.tick(ctx);
         }
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
-            "DayZ Road Tools {}",
+            "{} {}",
+            crate::APP_NAME,
             crate::version()
         )));
         match self.active {
@@ -179,7 +180,7 @@ pub(crate) fn run(language: Language) -> anyhow::Result<()> {
         viewport = viewport.with_icon(icon);
     }
     eframe::run_native(
-        "DayZ Road Tools",
+        crate::APP_NAME,
         eframe::NativeOptions {
             viewport,
             ..Default::default()
@@ -338,7 +339,7 @@ mod tests {
                 assert!(
                     labels(&output)
                         .iter()
-                        .any(|(text, _)| text == "DAYZ ROAD TOOLS")
+                        .any(|(text, _)| text == "DAYZ ROAD STUDIO")
                 );
             }
         }

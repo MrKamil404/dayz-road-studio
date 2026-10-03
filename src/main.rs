@@ -8,6 +8,7 @@ use anyhow::{Result, bail};
 use i18n::Language;
 use std::path::{Path, PathBuf};
 pub const DEFAULT_MODELS: &str = "P:\\dz\\structures\\roads\\parts";
+pub const APP_NAME: &str = "DayZ Road Studio";
 pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
         .strip_suffix(".0")
@@ -40,11 +41,7 @@ fn run(a: Vec<String>, language: Language) -> Result<()> {
     };
     let root = |index| PathBuf::from(a.get(index).map(String::as_str).unwrap_or(DEFAULT_MODELS));
     match a[0].as_str() {
-        "--version" | "-V" => println!(
-            "{} {}",
-            language.tr("Scalanie dróg Terrain Builder"),
-            version()
-        ),
+        "--version" | "-V" => println!("{} {}", APP_NAME, version()),
         "merge" if a.len() == 4 => println!(
             "{}",
             language.tr(&tv4p::merge(

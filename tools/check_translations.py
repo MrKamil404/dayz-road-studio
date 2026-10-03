@@ -28,7 +28,7 @@ technical = {
     'roads', 'road_kind', 'E', 'N', '100 m', '../app_icon.png',
     'Terrain Builder Road Merger', '  {} 0x{:02X} {}',
     'A…', 'B…', 'MLOD', 'px', 'm',
-    'TERRAIN BUILDER / DAYZ', 'DAYZ ROAD TOOLS', 'Merge', 'Road Builder',
+    'TERRAIN BUILDER / DAYZ', 'DAYZ ROAD STUDIO', 'Merge', 'Road Builder',
     'toolsets', 'shell-language', 'DayZ Road Tools {}', 'DayZ Road Tools',
     'ui-screenshot', 'EFRAME_SCREENSHOT_TO', 'DAYZ_SCREENSHOT_TOOLSET', 'builder', 'merge',
 }

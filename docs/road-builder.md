@@ -1,4 +1,4 @@
-# Road Builder — DayZ Road Tools
+# Road Builder — DayZ Road Studio 2.0
 
 Natywny edytor dróg w Rust dla projektów Terrain Builder `.tv4p`. Interfejs Polski / English, oparty na eframe/egui. Bazuje na odczycie TV4P i geometrii MLOD z [DayZRoadsMerge / Terrain Builder Road Merger](https://github.com/MrKamil404/Terrain-Builder-Road-Merger). Oryginalny plik TV4P nie jest nadpisywany przez tę aplikację.
 

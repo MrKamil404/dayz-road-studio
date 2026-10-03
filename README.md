@@ -1,6 +1,6 @@
-# Terrain Builder Road Merger 1.1 - Rust
+# DayZ Road Studio 2.0
 
-A Windows application for merging roads from `.tv4p` projects, with geometry previews, filtering, selection and PNG export. The application is written in Rust.
+A Windows application for merging and designing roads in Terrain Builder `.tv4p` projects. DayZ Road Studio combines **Merge** and **Road Builder** with geometry previews, terrain tools and PNG export. Written in Rust.
 
 The same executable now includes **Road Builder**, integrated from DayZRoadToolExternal 0.1.5. Starting without a CLI command opens a launcher with **Merge** and **Road Builder**. After choosing a toolset, use the top tabs to switch; both tools retain their loaded projects, views, selections and work in progress for the current session. **Tools** returns to the launcher. The shared **Polski / English** selector covers both tools, including Builder dialogs and statuses. Background jobs continue while another tab is active. Closing checks Builder's unsaved changes even from Merge.
 
@@ -8,7 +8,7 @@ Road Builder includes manual and live road drawing, MLOD segment fitting, SHP im
 
 The Builder sources are included in `crates/road-builder`; building needs no neighbouring repository or separate Builder EXE. Its TV4P and geometry implementations remain separate from Merge to preserve the original editor's export behaviour.
 
-![tv4p_merge_roads 1.1 interace](https://raw.githubusercontent.com/MrKamil404/Terrain-Builder-Road-Merger/refs/heads/main/images/prev1.png)
+![Legacy Road Merger 1.1 interface](https://raw.githubusercontent.com/MrKamil404/Terrain-Builder-Road-Merger/refs/heads/main/images/prev1.png)
 
 > [!CAUTION]
 > Always keep a separate backup copy of your Terrain Builder project before merging roads or saving a result. Keep the original input projects and write the merged result to a different file.
@@ -19,9 +19,18 @@ Special thanks to **WoozyMasta** for [tv4p-road-tool](https://github.com/WoozyMa
 
 ## Version
 
-Current application version: **1.1** (`1.1.0` in Cargo). The version is shown in the window title and can be printed with `tv4p_merge_roads.exe --version`.
+Current application version: **2.0** (`2.0.0` in Cargo). The application is named **DayZ Road Studio**. The executable remains `tv4p_merge_roads.exe` for compatibility with existing workflows. The version is shown in the window title and can be printed with `tv4p_merge_roads.exe --version`.
 
-## Recent changes
+## Changes in 2.0
+
+- Launcher and persistent Merge / Road Builder tabs in one executable.
+- Full Road Builder integration: live and manual drawing, SHP, satellite BMP/PNG, ASC, terrain routing and grading, undo/redo and `.dzroad` projects.
+- Shared dark theme and Polish / English interface across both toolsets.
+- Background PNG export from Builder, including map-aligned images and transparency.
+- Configurable road type colors in both tools, respected by PNG export and saved in Builder projects.
+- Background jobs remain active across tab changes; closing checks unsaved Builder changes from any tab.
+
+### Earlier Merge features
 
 - Rewritten in Rust, with road part shapes read from MLOD P3D models.
 - Separate road lists and previews for A, B and the result, with filtering and selection in the list and map.
