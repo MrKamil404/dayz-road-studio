@@ -1,4 +1,4 @@
-# DayZ Road Studio 2.0
+# DayZ Road Studio 2.2.0
 
 A Windows application for merging and designing roads in Terrain Builder `.tv4p` projects. DayZ Road Studio combines **Merge** and **Road Builder** with geometry previews, terrain tools and PNG export. Written in Rust.
 
