@@ -1,4 +1,4 @@
-//! Grade only grid centres inside the placed MLOD triangles, using port elevations.
+//! Grade MLOD footprints with an optional smooth transition to surrounding terrain.
 use crate::{
     geometry::{Point, Shape, add, mul, norm, sub},
     roads::{CatalogPart, PlacedPart},
@@ -29,6 +29,19 @@ fn inside(p: Point, t: [Point; 3]) -> bool {
     }
     let sign = area.signum();
     (0..3).all(|i| sign * cross(sub(t[(i + 1) % 3], t[i]), sub(p, t[i])) >= -1e-8)
+}
+fn triangle_distance(p: Point, t: [Point; 3]) -> f64 {
+    if inside(p, t) { return 0.; }
+    (0..3).map(|i| {
+        let a = t[i];
+        let d = sub(t[(i + 1) % 3], a);
+        let len2 = d[0] * d[0] + d[1] * d[1];
+        let rel = sub(p, a);
+        let fraction = if len2 > 1e-20 {
+            ((rel[0] * d[0] + rel[1] * d[1]) / len2).clamp(0., 1.)
+        } else { 0. };
+        norm(sub(p, add(a, mul(d, fraction))))
+    }).fold(f64::INFINITY, f64::min)
 }
 fn fraction(p: Point, s: &Surface) -> f64 {
     let mut best = f64::INFINITY;
@@ -65,6 +78,19 @@ pub fn apply(
     dir: &Path,
     cancel: &AtomicBool,
 ) -> Result<(Terrain, usize)> {
+    apply_with_blend(terrain, parts, catalog, dir, cancel, 0.)
+}
+
+pub fn apply_with_blend(
+    terrain: &Terrain,
+    parts: &[PlacedPart],
+    catalog: &[CatalogPart],
+    dir: &Path,
+    cancel: &AtomicBool,
+    blend_width: f64,
+) -> Result<(Terrain, usize)> {
+    ensure!(blend_width.is_finite() && (0.0..=500.).contains(&blend_width),
+        "Nieprawidłowa szerokość wygładzania terenu");
     ensure!(
         !parts.is_empty(),
         "Najpierw wygeneruj segmenty wybranej trasy"
@@ -140,13 +166,14 @@ pub fn apply(
         derivatives.push(d);
     }
     derivatives.push(*slopes.last().unwrap());
-    let mut edits: HashMap<usize, (f64, usize)> = HashMap::new();
+    let mut edits: HashMap<usize, (f64, usize, f64)> = HashMap::new();
     let m = &terrain.meta;
     for (i, s) in surfaces.iter().enumerate() {
-        let mut cells = HashMap::new();
+        let mut cells: HashMap<usize, (f64, f64)> = HashMap::new();
         for tri in &s.shape.triangles {
+            if cross(sub(tri[1], tri[0]), sub(tri[2], tri[0])).abs() < 1e-10 { continue; }
             ensure!(!cancel.load(Ordering::Relaxed), "Modyfikacja ASC anulowana");
-            let bounds = tri.iter().fold(
+            let mut bounds = tri.iter().fold(
                 [
                     f64::INFINITY,
                     f64::INFINITY,
@@ -161,6 +188,10 @@ pub fn apply(
                     b
                 },
             );
+            bounds[0] -= blend_width;
+            bounds[1] -= blend_width;
+            bounds[2] += blend_width;
+            bounds[3] += blend_width;
             let x0 = (((bounds[0] - m.east) / m.cell - 0.5).ceil().max(0.) as usize).min(m.cols);
             let x1 = (((bounds[2] - m.east) / m.cell - 0.5).floor() + 1.).max(0.) as usize;
             let y0 = ((m.rows as f64 - (bounds[3] - m.north) / m.cell - 0.5)
@@ -173,7 +204,13 @@ pub fn apply(
                 ensure!(!cancel.load(Ordering::Relaxed), "Modyfikacja ASC anulowana");
                 for x in x0..x1.min(m.cols) {
                     let p = terrain.point(x, y);
-                    if inside(p, *tri) && terrain.value(x, y).is_some() {
+                    let distance = triangle_distance(p, *tri);
+                    let weight = if distance == 0. { 1. }
+                        else if blend_width > 0. && distance < blend_width {
+                            let t = distance / blend_width;
+                            1. - t * t * (3. - 2. * t)
+                        } else { continue; };
+                    if terrain.value(x, y).is_some() {
                         let z = height(
                             heights[i],
                             heights[i + 1],
@@ -186,16 +223,18 @@ pub fn apply(
                             z.is_finite() && z.abs() <= f32::MAX as f64,
                             "Wysokość poza zakresem ASC"
                         );
-                        cells.insert(y * m.cols + x, z);
+                        let cell = cells.entry(y * m.cols + x).or_insert((z, weight));
+                        if weight > cell.1 { *cell = (z, weight); }
                     }
                 }
             }
         }
-        // Shared faces are counted once per part; overlapping parts use a deterministic mean.
-        for (cell, z) in cells {
-            let e = edits.entry(cell).or_insert((0., 0));
-            e.0 += z;
-            e.1 += 1;
+        // Full grading under a road takes priority over neighbouring transition bands.
+        // Equally strong overlapping surfaces retain the deterministic mean.
+        for (cell, (z, weight)) in cells {
+            let e = edits.entry(cell).or_insert((0., 0, weight));
+            if weight > e.2 { *e = (z, 1, weight); }
+            else if weight == e.2 { e.0 += z; e.1 += 1; }
         }
     }
     ensure!(
@@ -211,7 +250,7 @@ pub fn apply(
             let old = terrain.value(x, y).map(|z| z as f32).unwrap_or(f32::NAN);
             let z = edits
                 .get(&(y * m.cols + x))
-                .map(|(sum, n)| (sum / *n as f64) as f32)
+                .map(|(sum, n, weight)| (old as f64 + (sum / *n as f64 - old as f64) * weight) as f32)
                 .unwrap_or(old);
             if old.is_finite() && old.to_bits() != z.to_bits() {
                 changed += 1;
@@ -323,6 +362,36 @@ mod tests {
             },
         }]
     }
+    #[test]
+    fn blend_width_controls_transition_and_preserves_outer_terrain() {
+        let root = std::env::temp_dir().join(format!("road-grade-blend-{}", std::process::id()));
+        let source = fixture(&root.join("source"));
+        let original = std::fs::read(root.join("source/height.f32")).unwrap();
+        let parts = vec![PlacedPart {
+            model: "fixture.p3d".into(), reverse: false,
+            position: [8.5, 8.5], rotation: 0.,
+        }];
+        let c = catalog();
+        let cancel = AtomicBool::new(false);
+        let (narrow, _) = apply_with_blend(&source, &parts, &c, &root.join("narrow"), &cancel, 2.).unwrap();
+        let (wide, _) = apply_with_blend(&source, &parts, &c, &root.join("wide"), &cancel, 4.).unwrap();
+        // x=12.5 is one metre beyond the right edge at x=11.5.
+        let old = source.value(12, 21).unwrap();
+        let target = 50. + source.point(12, 21)[1];
+        assert!((wide.value(12, 21).unwrap() - (old + (target - old) * 0.84375)).abs() < 1e-5);
+        assert!(wide.value(12, 21).unwrap() < narrow.value(12, 21).unwrap());
+        assert_eq!(narrow.value(13, 21), source.value(13, 21));
+        assert_ne!(wide.value(13, 21), source.value(13, 21));
+        assert_eq!(wide.value(15, 21), source.value(15, 21));
+        assert!((wide.value(10, 21).unwrap() - (50. + source.point(10, 21)[1])).abs() < 1e-5);
+        assert_eq!(wide.value(6, 10), None);
+        assert_eq!(std::fs::read(root.join("source/height.f32")).unwrap(), original);
+        for width in [-1., f64::NAN, 501.] {
+            assert!(apply_with_blend(&source, &parts, &c, &root.join("invalid"), &cancel, width).is_err());
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn footprint_gaps_nodata_profile_and_asc_roundtrip() {
         let root = std::env::temp_dir().join(format!("road-grade-{}", std::process::id()));

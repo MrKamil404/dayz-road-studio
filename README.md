@@ -22,7 +22,7 @@ Special thanks to **WoozyMasta** for [tv4p-road-tool](https://github.com/WoozyMa
 
 ## Version
 
-Current application version: **2.1.2** (`2.1.2` in Cargo). The application is named **DayZ Road Studio**. The executable remains `tv4p_merge_roads.exe` for compatibility with existing workflows. The version is shown in the window title and can be printed with `tv4p_merge_roads.exe --version`.
+Current application version: **2.2.0** (`2.2.0` in Cargo). The application is named **DayZ Road Studio**. The executable remains `tv4p_merge_roads.exe` for compatibility with existing workflows. The version is shown in the window title and can be printed with `tv4p_merge_roads.exe --version`.
 
 ## Changes in 2.0
 
@@ -204,3 +204,7 @@ Both left panels include **Road type colors**. Click a type swatch to choose its
 Select a route on the map or in the project route list, then choose **Edit points**. Drag a point to reshape the line. Double-click a line segment to insert a point, or double-right-click a point to remove it (at least two points remain). You can select unfinished lines by clicking anywhere on the line. Drag away from handles to move the entire route. Point edits clear the previous fitted segments; use **Fit models to points** again before TV4P export. Undo/redo restores both the line and its fitted segments, and point edits are saved in the .dzroad project. This edits project route lines; imported TV4P roads retain their move/rotate controls.
 
 See [CHANGELOG.md](CHANGELOG.md) for release changes.
+
+### Terrain grading transition width
+
+In Road Builder, the Terrain under segments panel includes a blending width in metres per side, measured outwards from the MLOD footprint. At 0 m only the footprint changes. For example, 10 m adds a smooth transition band extending 10 m beyond the road edges, fading to the original terrain at its outer boundary. Set the width before applying terrain grading, then export ASC. The setting is stored in the project; existing projects default to 0 m. Source terrain and NoData cells remain preserved.

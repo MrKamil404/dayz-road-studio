@@ -576,5 +576,8 @@
     "en": "Restore the default color for this type"
   },
 {"en":"Edit points","pl":"Edytuj punkty"},
-{"en":"Drag a point to reshape the route. Double-click the line to add a point; double-right-click a point to remove it. Fit models again after editing.","pl":"Przeciągnij punkt, aby zmienić trasę. Podwójny klik na linii dodaje punkt; podwójny prawy klik na punkcie usuwa go. Po edycji dopasuj modele ponownie."}
+{"en":"Drag a point to reshape the route. Double-click the line to add a point; double-right-click a point to remove it. Fit models again after editing.","pl":"Przeciągnij punkt, aby zmienić trasę. Podwójny klik na linii dodaje punkt; podwójny prawy klik na punkcie usuwa go. Po edycji dopasuj modele ponownie."},
+{"en":"Blending width on each side [m]","pl":"Szerokość wygładzania z każdej strony [m]"},
+{"en":"Smooth road profile with a gradual transition to surrounding terrain. Width is measured from segment edges; 0 m changes only the MLOD footprint.","pl":"Płynny profil pod drogą i łagodne przejście do otaczającego terenu. Szerokość liczona od krawędzi partów; 0 m zmienia tylko obrys MLOD."},
+{"en":"Invalid terrain blending width","pl":"Nieprawidłowa szerokość wygładzania terenu"}
 ]

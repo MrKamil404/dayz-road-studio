@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.2.0 — 2026-10-04
+
+### Added
+- Configurable terrain grading transition width, 0–500 metres beyond segment edges. Full grading remains inside the MLOD footprint; the outer band smoothly blends towards original terrain.
+- Store the blending width in project files, with a 0 m default for older projects and support for undo/redo.
+- Polish and English labels and regression coverage for transition strength, range boundaries, preserved source/NoData and saved settings.
+
 ## 2.1.2 — 2026-10-04
 
 ### Fixed

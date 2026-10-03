@@ -72,6 +72,9 @@ pub struct Document {
     pub terrain_origin: Option<Point>,
     pub map: MapSettings,
     pub routing: RoutingSettings,
+    /// Smooth transition width beyond the MLOD footprint, in metres per side.
+    #[serde(default)]
+    pub grading_blend_width: f64,
     pub routes: Vec<Route>,
     pub deleted: Vec<u32>,
     #[serde(default)]
@@ -93,6 +96,7 @@ impl Default for Document {
             terrain_origin: None,
             map: MapSettings::default(),
             routing: RoutingSettings::default(),
+            grading_blend_width: 0.,
             routes: vec![],
             deleted: vec![],
             transforms: vec![],
@@ -103,6 +107,8 @@ impl Default for Document {
 }
 impl Document {
     pub fn validate(&self) -> Result<()> {
+        ensure!(self.grading_blend_width.is_finite() && (0.0..=500.).contains(&self.grading_blend_width),
+            "Nieprawidłowa szerokość wygładzania terenu");
         ensure!(self.version == 1, "Nieobsługiwana wersja projektu");
         ensure!(self.map.valid(), "Nieprawidłowe współrzędne mapy");
         let s = &self.routing;
@@ -202,8 +208,14 @@ mod tests {
     fn older_projects_without_road_colors_still_load() {
         let mut old = serde_json::to_value(Document::default()).unwrap();
         old.as_object_mut().unwrap().remove("road_colors");
+        old.as_object_mut().unwrap().remove("grading_blend_width");
         let document: Document = serde_json::from_value(old).unwrap();
         document.validate().unwrap();
         assert!(document.road_colors.is_empty());
+        assert_eq!(document.grading_blend_width, 0.);
+        let mut updated = document;
+        updated.grading_blend_width = 12.5;
+        let restored: Document = serde_json::from_slice(&serde_json::to_vec(&updated).unwrap()).unwrap();
+        assert_eq!(restored.grading_blend_width, 12.5);
     }
 }

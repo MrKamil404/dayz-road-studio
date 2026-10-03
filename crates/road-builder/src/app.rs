@@ -434,6 +434,7 @@ impl App {
             self.doc.terrain = d.terrain;
             self.doc.terrain_cache = d.terrain_cache;
             self.doc.terrain_origin = d.terrain_origin;
+            self.doc.grading_blend_width = d.grading_blend_width;
             self.dirty = true;
             self.selected = None;
             self.rebuild();
@@ -1155,7 +1156,15 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
                         }
                         ui.separator();
                         ui.heading(lang.tr("Teren pod partami"));
-                        ui.small(lang.tr("Płynny profil z wysokości ASC na łączeniach. Zmiana tylko wewnątrz obrysu MLOD, bez poboczy."));
+                        ui.small(lang.tr("Płynny profil pod drogą i łagodne przejście do otaczającego terenu. Szerokość liczona od krawędzi partów; 0 m zmienia tylko obrys MLOD."));
+                        ui.horizontal(|ui| {
+                            ui.label(lang.tr("Szerokość wygładzania z każdej strony [m]"));
+                            let mut width = self.doc.grading_blend_width;
+                            if ui.add(egui::DragValue::new(&mut width).range(0.0..=500.).speed(0.5)).changed() {
+                                self.checkpoint();
+                                self.doc.grading_blend_width = width;
+                            }
+                        });
                         let can_grade = self.terrain.is_some() && self.draft.is_empty() && matches!(self.selected, Some(Selection::Route(i)) if !self.doc.routes[i].parts.is_empty());
                         if ui.add_enabled(can_grade, egui::Button::new("Dopasuj ASC pod wybraną drogą")).clicked() { self.grade_asc(); }
                         if ui.add_enabled(self.terrain.is_some(), egui::Button::new("Eksport ASC…")).clicked() { self.export_asc(); }
@@ -1591,12 +1600,13 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
         };
         let catalog = self.catalog.clone();
         self.clear_live();
+        let blend_width = self.doc.grading_blend_width;
         self.start("Modyfikacja ASC pod partami", move |cancel| {
             let mut terrain = Terrain::open(&dir)?;
             terrain.meta = meta;
             let output = Self::cache_dir("asc-graded")?;
             let (t, count) =
-                dayz_road_tool::grading::apply(&terrain, &parts, &catalog, &output, &cancel)?;
+                dayz_road_tool::grading::apply_with_blend(&terrain, &parts, &catalog, &output, &cancel, blend_width)?;
             Ok(Loaded::Graded(output, t, count))
         });
     }
