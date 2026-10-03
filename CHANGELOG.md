@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.1 — 2026-10-04
+
+### Fixed
+- Reduce unnecessary weaving during road fitting by scoring exit direction and avoiding curves that worsen alignment while the road is close to its target line.
+- Limit lookahead to the end of the route and reserve space for the final cap, preventing artificial curls near the last point.
+- Add regression coverage for straight and nearly straight routes with curve models available; retain rounded-corner fitting coverage.
+
 ## 2.1.0 — 2026-10-04
 
 ### Added

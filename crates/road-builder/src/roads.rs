@@ -164,6 +164,23 @@ fn nearest_progress(p: Point, line: &[Point]) -> (f64, f64) {
     }
     best
 }
+fn direction_at(line: &[Point], progress: f64) -> Point {
+    let mut walked = 0.;
+    let mut direction = [0., 1.];
+    for w in line.windows(2) {
+        let delta = sub(w[1], w[0]);
+        let length = norm(delta);
+        if length < 1e-8 {
+            continue;
+        }
+        direction = mul(delta, 1. / length);
+        if walked + length > progress {
+            return direction;
+        }
+        walked += length;
+    }
+    direction
+}
 /// Greedy connector-exact fitting with lookahead. Failure leaves the document untouched.
 pub fn fit(
     points: &[Point],
@@ -261,7 +278,9 @@ pub fn fit(
                     outward: rotate(exit.outward, angle),
                 };
                 let (deviation, pr) = nearest_progress(next.p, points);
-                if pr <= progress + 0.01 || deviation > s.tolerance {
+                if pr <= progress + 0.01 || deviation > s.tolerance
+                    || pr + cap.model.length > length + s.tolerance
+                {
                     continue;
                 }
                 let mut line = model.line.clone();
@@ -279,11 +298,33 @@ pub fn fit(
                 {
                     continue;
                 }
-                let look = add(next.p, mul(next.outward, 10.));
-                let future = nearest_progress(look, points).0;
                 let remaining = length - pr;
+                // Looking past the final point makes a straight exit appear worse
+                // than a curve that curls back into the route's end corridor.
+                let look = add(next.p, mul(next.outward, remaining.clamp(0., 10.)));
+                let future = nearest_progress(look, points).0;
+                let target_direction = direction_at(points, pr);
+                let heading_error = (next.outward[0] * target_direction[1]
+                    - next.outward[1] * target_direction[0])
+                    .atan2(next.outward[0] * target_direction[0]
+                        + next.outward[1] * target_direction[1])
+                    .abs();
+                let incoming_error = (at.outward[0] * target_direction[1]
+                    - at.outward[1] * target_direction[0])
+                    .atan2(at.outward[0] * target_direction[0]
+                        + at.outward[1] * target_direction[1])
+                    .abs();
+                if turn > 1e-5 && heading_error >= incoming_error
+                    && nearest_progress(at.p, points).0 < s.tolerance * 0.5
+                {
+                    continue;
+                }
+                // Endpoint distance alone rewards alternating curves inside the
+                // tolerance corridor. Prefer aligned exits and avoid needless turns.
                 let score = deviation * 3.
                     + future
+                    + heading_error * 4.
+                    + turn
                     + if remaining < 50. {
                         norm(sub(next.p, end)) * 0.2
                     } else {
@@ -311,6 +352,28 @@ pub fn fit(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn nearly_straight_routes_do_not_weave_with_available_curves() {
+        let c: Vec<_> = [
+            ("asf2_6.p3d", 3), ("asf2_12.p3d", 3), ("asf2_25.p3d", 3),
+            ("asf2_10 25.p3d", 4), ("asf2_10 100.p3d", 4),
+            ("asf2_6konec.p3d", 6),
+        ].into_iter().map(|(name, category)| CatalogPart {
+            path: name.into(), family: "asf2".into(), category,
+            index: 0, road_type_index: 0,
+            model: crate::geometry::filename_model(name).unwrap(),
+        }).collect();
+        for points in [
+            vec![[0., 0.], [0., 200.]],
+            vec![[0., 0.], [0., 100.], [1., 200.]],
+            vec![[0., 0.], [0., 100.], [2., 200.]],
+        ] {
+            let settings = RoutingSettings::default();
+            let parts = fit(&points, "asf2", &c, &settings, |_, _| true).unwrap();
+            assert!(parts.iter().all(|p| !p.model.contains(' ')), "{parts:?}");
+            assert!(norm(sub(endpoint(&parts, &c).unwrap().p, *points.last().unwrap())) <= settings.tolerance);
+        }
+    }
     #[test]
     fn rounded_corner_is_fitted_with_available_curves() {
         let mut c = Vec::new();
