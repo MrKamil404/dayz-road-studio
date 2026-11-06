@@ -1,4 +1,4 @@
-# DayZ Road Studio 2.2.0
+# DayZ Road Studio 2.3.0
 
 A Windows application for merging and designing roads in Terrain Builder `.tv4p` projects. DayZ Road Studio combines **Merge** and **Road Builder** with geometry previews, terrain tools and PNG export. Written in Rust.
 
@@ -22,7 +22,7 @@ Special thanks to **WoozyMasta** for [tv4p-road-tool](https://github.com/WoozyMa
 
 ## Version
 
-Current application version: **2.2.0** (`2.2.0` in Cargo). The application is named **DayZ Road Studio**. The executable remains `tv4p_merge_roads.exe` for compatibility with existing workflows. The version is shown in the window title and can be printed with `tv4p_merge_roads.exe --version`.
+Current application version: **2.3.0** (`2.3.0` in Cargo). The application is named **DayZ Road Studio**. The executable remains `tv4p_merge_roads.exe` for compatibility with existing workflows. The version is shown in the window title and can be printed with `tv4p_merge_roads.exe --version`.
 
 ## Changes in 2.0
 
@@ -208,3 +208,7 @@ See [CHANGELOG.md](CHANGELOG.md) for release changes.
 ### Terrain grading transition width
 
 In Road Builder, the Terrain under segments panel includes a blending width in metres per side, measured outwards from the MLOD footprint. At 0 m only the footprint changes. For example, 10 m adds a smooth transition band extending 10 m beyond the road edges, fading to the original terrain at its outer boundary. Set the width before applying terrain grading, then export ASC. The setting is stored in the project; existing projects default to 0 m. Source terrain and NoData cells remain preserved.
+
+### Route across terrain
+
+In Road Builder, select a drawn route and choose **Route across terrain** after loading an ASC. The route points are kept as they are: the road passes through each of them, with a continuous heading through intermediate points, and its models are fitted along the cheapest road found on the terrain. All **Road constraints** apply: **Max. slope %** limits every stretch of the fitted road, **Slope penalty** adds the total climb to the road length, **Routing step m** sets the search step, **Min. radius m** limits every curve and **Route tolerance m** keeps the road that far from forbidden areas and bounds how far the models may deviate from the line. A point at the foot of a hill and another on its top produce a longer road (serpentines, a loop or a detour) whenever the direct climb is too steep. Hard routes can take several seconds; if no road satisfies the constraints, the status names the point and the closest approach. Use **Fit models to points** to follow the drawn line itself instead.

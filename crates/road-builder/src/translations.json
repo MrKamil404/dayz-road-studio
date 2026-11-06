@@ -556,10 +556,6 @@
     "en": "BMP: uncompressed 8/24/32-bit supported. Convert other BMP files to PNG"
   },
   {
-    "pl": "Brak dojazdu do punktu przy tej rozdzielczości. Zmniejsz krok automatu",
-    "en": "Cannot reach the point at this resolution. Reduce the routing step"
-  },
-  {
     "pl": "Brak komórek ASC wewnątrz partów. Sprawdź zasięg i rozdzielczość ASC",
     "en": "No ASC cell centres inside the road parts. Check ASC bounds and resolution"
   },
@@ -726,6 +722,22 @@
   {
     "pl": "Nie znaleziono trasy spełniającej ograniczenia",
     "en": "No route satisfying the constraints was found"
+  },
+  {
+    "pl": "Nie znaleziono trasy spełniającej ograniczenia. Do punktu {0} dojechano najbliżej na {1} m. Zwiększ spadek maks., zmniejsz promień min. lub krok automatu",
+    "en": "No route satisfying the constraints was found. The closest approach to point {0} was {1} m. Increase the maximum grade, reduce the minimum radius or the search step"
+  },
+  {
+    "pl": "Przekroczono budżet wyszukiwania. Do punktu {0} dojechano najbliżej na {1} m. Zwiększ krok, złagodź ograniczenia lub dodaj punkty pośrednie",
+    "en": "Search budget exceeded. The closest approach to point {0} was {1} m. Increase the step, relax the constraints or add intermediate points"
+  },
+  {
+    "pl": "Droga nie może wyjechać z punktu {0} w kierunku, w którym do niego dojeżdża. Przesuń punkt, dodaj punkt pośredni lub złagodź ograniczenia",
+    "en": "The road cannot leave point {0} in the direction it arrives from. Move the point, add an intermediate point or relax the constraints"
+  },
+  {
+    "pl": "Punkt trasy leży w obszarze zakazanym lub bliżej niego niż tolerancja trasy",
+    "en": "A route point lies inside a forbidden area or closer to it than the route tolerance"
   },
   {
     "pl": "Nieobsługiwana kategoria segmentu lub kierunek",
@@ -984,10 +996,6 @@
     "en": "Drag a road in Select mode to move it."
   },
   {
-    "pl": "Przekroczono budżet wyszukiwania. Zwiększ krok lub dodaj punkty pośrednie",
-    "en": "Search budget exceeded. Increase the step or add intermediate points"
-  },
-  {
     "pl": "Przerwano podgląd",
     "en": "Preview interrupted"
   },
@@ -1032,8 +1040,8 @@
     "en": "The route is too short for two konec segments or contains repeated points"
   },
   {
-    "pl": "Trasa przekracza budżet 20000 segmentów",
-    "en": "The route exceeds the 20000-segment budget"
+    "pl": "Przekroczono limit prób dopasowania modeli. Złagodź zakręty, zwiększ tolerancję lub dodaj punkty pośrednie",
+    "en": "Model fitting attempt limit exceeded. Soften the curves, increase the tolerance or add intermediate points"
   },
   {
     "pl": "Trasa wyznaczona i złożona z modeli",

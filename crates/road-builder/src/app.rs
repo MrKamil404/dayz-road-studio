@@ -868,28 +868,32 @@ impl App {
                     }
                     t
                 });
-                let points = if automatic {
-                    routing::find(
+                let parts = if automatic {
+                    // The terrain route already respects the minimum radius and passes
+                    // through every waypoint; it is fitted without rounding it again.
+                    routing::plan(
                         terrain
                             .as_ref()
                             .ok_or_else(|| anyhow::anyhow!("Wczytaj ASC"))?,
                         &route.points,
+                        &route.family,
+                        &catalog,
                         &settings,
                         &forbidden,
                         &cancel,
                     )?
                 } else {
-                    route.points.clone()
+                    roads::fit(&route.points, &route.family, &catalog, &settings, |a, b| {
+                        !cancel.load(Ordering::Relaxed)
+                            && terrain
+                                .as_ref()
+                                .map(|t| routing::permitted(a, b, t, &settings, &forbidden))
+                                .unwrap_or_else(|| !routing::blocked_segment(a, b, &forbidden))
+                    })?
                 };
-                let parts = roads::fit(&points, &route.family, &catalog, &settings, |a, b| {
-                    !cancel.load(Ordering::Relaxed)
-                        && terrain
-                            .as_ref()
-                            .map(|t| routing::permitted(a, b, t, &settings, &forbidden))
-                            .unwrap_or_else(|| !routing::blocked_segment(a, b, &forbidden))
-                })?;
                 ensure!(!cancel.load(Ordering::Relaxed), "Anulowano");
-                Ok(Loaded::Route(index, points, parts))
+                // Keep the user's waypoints editable; the fitted models carry the terrain route.
+                Ok(Loaded::Route(index, route.points.clone(), parts))
             },
         );
     }

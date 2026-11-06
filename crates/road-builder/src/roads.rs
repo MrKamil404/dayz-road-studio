@@ -145,7 +145,9 @@ pub fn smooth(points: &[Point], radius: f64) -> Result<Vec<Point>> {
     out.push(*points.last().unwrap());
     Ok(out)
 }
-fn nearest_progress(p: Point, line: &[Point]) -> (f64, f64) {
+/// Nearest point of `line` limited to the progress window `[lo, hi]`, as (distance, progress).
+/// The window keeps parallel legs of serpentines from being mistaken for the current one.
+fn nearest_progress_in(p: Point, line: &[Point], lo: f64, hi: f64) -> (f64, f64) {
     let mut walked = 0.;
     let mut best = (f64::INFINITY, 0.);
     for w in line.windows(2) {
@@ -154,8 +156,16 @@ fn nearest_progress(p: Point, line: &[Point]) -> (f64, f64) {
         if length < 1e-8 {
             continue;
         }
+        let (t0, t1) = (
+            ((lo - walked) / length).max(0.),
+            ((hi - walked) / length).min(1.),
+        );
+        if t0 > t1 {
+            walked += length;
+            continue;
+        }
         let rel = sub(p, w[0]);
-        let t = ((rel[0] * delta[0] + rel[1] * delta[1]) / (length * length)).clamp(0., 1.);
+        let t = ((rel[0] * delta[0] + rel[1] * delta[1]) / (length * length)).clamp(t0, t1);
         let d = norm(sub(p, add(w[0], mul(delta, t))));
         if d < best.0 {
             best = (d, walked + t * length);
@@ -191,7 +201,18 @@ pub fn fit(
 ) -> Result<Vec<PlacedPart>> {
     ensure!(points.len() >= 2, "Wskaż przynajmniej dwa punkty");
     let smoothed = smooth(points, s.min_radius)?;
-    let points = smoothed.as_slice();
+    fit_path(&smoothed, family, catalog, s, allowed)
+}
+/// Fit models to an already curvature-limited centreline (for example a terrain route)
+/// without rounding its corners again, so the road stays on every point of the line.
+pub fn fit_path(
+    points: &[Point],
+    family: &str,
+    catalog: &[CatalogPart],
+    s: &RoutingSettings,
+    allowed: impl Fn(Point, Point) -> bool,
+) -> Result<Vec<PlacedPart>> {
+    ensure!(points.len() >= 2, "Wskaż przynajmniej dwa punkty");
     let cap=catalog.iter().filter(|m|m.family==family && m.category==6)
         .find(|m|m.path.rsplit(['\\','/']).next().unwrap_or("").to_lowercase().contains("konec"))
         .context("Brak segmentu konec MLOD dla wybranego typu drogi. Dodaj go do definicji Road Tool i wczytaj modele")?;
@@ -224,37 +245,48 @@ pub fn fit(
         p: points[0],
         outward: mul(initial, 1. / norm(initial)),
     };
-    let valid_part = |part: &PlacedPart, model: &Model| {
+    // Search only the stretch of line a single model can cover from the current progress.
+    let ahead = choices
+        .iter()
+        .map(|m| m.model.length)
+        .fold(cap.model.length, f64::max)
+        + s.tolerance * 2.
+        + 10.;
+    let near = |p: Point, from: f64| nearest_progress_in(p, points, from - s.tolerance * 2., from + ahead);
+    let valid_part = |part: &PlacedPart, model: &Model, from: f64| {
         let world: Vec<_> = model
             .line
             .iter()
             .map(|q| add(rotate(*q, -part.rotation.to_radians()), part.position))
             .collect();
         world.len() >= 2
-            && world
-                .iter()
-                .all(|q| nearest_progress(*q, points).0 <= s.tolerance)
+            && world.iter().all(|q| near(*q, from).0 <= s.tolerance)
             && world.windows(2).all(|w| allowed(w[0], w[1]))
     };
     let first = place(cap, at, false)?;
     ensure!(
-        valid_part(&first, &cap.model),
+        valid_part(&first, &cap.model, 0.),
         "Początkowy segment konec nie mieści się na trasie lub nie spełnia ograniczeń terenu"
     );
     at = placed_endpoint(&first, &cap.model)?;
-    let mut progress = nearest_progress(at.p, points).1;
+    let mut progress = near(at.p, 0.).1;
     let mut parts = vec![first];
-    for _ in 0..20000 {
+    // Depth-first with the best-scored models first: when no model fits, step back and try
+    // the next alternative of an earlier choice. Frame `i` holds the untried alternatives
+    // for `parts[i + 1]`, best last.
+    let mut stack: Vec<Vec<(PlacedPart, Port, f64)>> = Vec::new();
+    let mut furthest = progress;
+    for _ in 0..50000 {
         let last = place(cap, at, false)?;
         let last_end = placed_endpoint(&last, &cap.model)?;
         if norm(sub(last_end.p, end)) <= s.tolerance
-            && nearest_progress(last_end.p, points).1 >= length - s.tolerance * 2.
-            && valid_part(&last, &cap.model)
+            && near(last_end.p, progress).1 >= length - s.tolerance * 2.
+            && valid_part(&last, &cap.model, progress)
         {
             parts.push(last);
             return Ok(parts);
         }
-        let mut best = None;
+        let mut options = Vec::new();
         for item in &choices {
             for reverse in [false, true] {
                 // Only curves support the native reversed-segment code.
@@ -277,7 +309,7 @@ pub fn fit(
                     p: add(rotate(exit.p, angle), p.position),
                     outward: rotate(exit.outward, angle),
                 };
-                let (deviation, pr) = nearest_progress(next.p, points);
+                let (deviation, pr) = near(next.p, progress);
                 if pr <= progress + 0.01 || deviation > s.tolerance
                     || pr + cap.model.length > length + s.tolerance
                 {
@@ -293,7 +325,7 @@ pub fn fit(
                     .collect();
                 if world
                     .iter()
-                    .any(|q| nearest_progress(*q, points).0 > s.tolerance)
+                    .any(|q| near(*q, progress).0 > s.tolerance)
                     || !world.windows(2).all(|w| allowed(w[0], w[1]))
                 {
                     continue;
@@ -302,7 +334,7 @@ pub fn fit(
                 // Looking past the final point makes a straight exit appear worse
                 // than a curve that curls back into the route's end corridor.
                 let look = add(next.p, mul(next.outward, remaining.clamp(0., 10.)));
-                let future = nearest_progress(look, points).0;
+                let future = near(look, progress).0;
                 let target_direction = direction_at(points, pr);
                 let heading_error = (next.outward[0] * target_direction[1]
                     - next.outward[1] * target_direction[0])
@@ -315,7 +347,7 @@ pub fn fit(
                         + at.outward[1] * target_direction[1])
                     .abs();
                 if turn > 1e-5 && heading_error >= incoming_error
-                    && nearest_progress(at.p, points).0 < s.tolerance * 0.5
+                    && near(at.p, progress).0 < s.tolerance * 0.5
                 {
                     continue;
                 }
@@ -331,22 +363,39 @@ pub fn fit(
                         0.
                     }
                     - model.length * 0.03;
-                if best.as_ref().is_none_or(|(old, _, _, _)| score < *old) {
-                    best = Some((score, p, next, pr));
-                }
+                options.push((score, p, next, pr));
             }
         }
-        let Some((_, p, next, pr)) = best else {
-            anyhow::bail!(
-                "Nie można dopasować modeli przy {:.0} m trasy. Złagodź zakręty, zwiększ tolerancję lub użyj segmentów",
-                progress
+        if !options.is_empty() {
+            options.sort_by(|a, b| b.0.total_cmp(&a.0));
+            let keep = options.len().saturating_sub(4);
+            stack.push(
+                options
+                    .into_iter()
+                    .skip(keep)
+                    .map(|(_, p, next, pr)| (p, next, pr))
+                    .collect(),
             );
-        };
-        parts.push(p);
-        at = next;
-        progress = pr;
+        }
+        loop {
+            let Some(frame) = stack.last_mut() else {
+                anyhow::bail!(
+                    "Nie można dopasować modeli przy {:.0} m trasy. Złagodź zakręty, zwiększ tolerancję lub użyj segmentów",
+                    furthest
+                );
+            };
+            if let Some((p, next, pr)) = frame.pop() {
+                parts.truncate(stack.len());
+                parts.push(p);
+                at = next;
+                progress = pr;
+                furthest = furthest.max(pr);
+                break;
+            }
+            stack.pop();
+        }
     }
-    anyhow::bail!("Trasa przekracza budżet 20000 segmentów")
+    anyhow::bail!("Przekroczono limit prób dopasowania modeli. Złagodź zakręty, zwiększ tolerancję lub dodaj punkty pośrednie")
 }
 
 #[cfg(test)]

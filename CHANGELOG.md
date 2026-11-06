@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.3.0 — 2026-11-06
+
+### Changed
+- **Route across terrain** now searches the ASC slopes for the cheapest road that passes exactly through every route point, with a continuous heading through intermediate points. Depending on the terrain and settings the result can be serpentines, a loop around a hill, a detour or a nearly straight road.
+- All **Road constraints** are applied during the search: maximum slope on every stretch, slope penalty on the total climb, routing step, minimum radius of every curve and route tolerance as the clearance from forbidden areas.
+- Steep climbs are guided by a lower bound on road length (climb ÷ maximum slope) and a terrain cost map, so a point on a hilltop is reached by a longer road instead of failing.
+- The terrain route is fitted with models without rounding its corners again; model fitting can step back and try alternative segments. The search keeps a 10 % slope margin first so the fitted models also satisfy the maximum slope.
+- Route points stay unchanged and editable after routing; the fitted models carry the terrain route.
+- Errors name the route point and the closest approach, or report when the road cannot leave a point in the direction it arrives from.
+
+### Fixed
+- Terrain routes no longer miss intermediate points by rounding corners after the search, and no longer ignore the minimum radius while searching.
+
 ## 2.2.0 — 2026-10-04
 
 ### Added
