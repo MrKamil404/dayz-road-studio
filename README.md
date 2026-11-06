@@ -1,4 +1,4 @@
-# DayZ Road Studio 2.3.0
+# DayZ Road Studio 2.4.0
 
 A Windows application for merging and designing roads in Terrain Builder `.tv4p` projects. DayZ Road Studio combines **Merge** and **Road Builder** with geometry previews, terrain tools and PNG export. Written in Rust.
 
@@ -22,7 +22,7 @@ Special thanks to **WoozyMasta** for [tv4p-road-tool](https://github.com/WoozyMa
 
 ## Version
 
-Current application version: **2.3.0** (`2.3.0` in Cargo). The application is named **DayZ Road Studio**. The executable remains `tv4p_merge_roads.exe` for compatibility with existing workflows. The version is shown in the window title and can be printed with `tv4p_merge_roads.exe --version`.
+Current application version: **2.4.0** (`2.4.0` in Cargo). The application is named **DayZ Road Studio**. The executable remains `tv4p_merge_roads.exe` for compatibility with existing workflows. The version is shown in the window title and can be printed with `tv4p_merge_roads.exe --version`.
 
 ## Changes in 2.0
 
@@ -212,3 +212,7 @@ In Road Builder, the Terrain under segments panel includes a blending width in m
 ### Route across terrain
 
 In Road Builder, select a drawn route and choose **Route across terrain** after loading an ASC. The route points are kept as they are: the road passes through each of them, with a continuous heading through intermediate points, and its models are fitted along the cheapest road found on the terrain. All **Road constraints** apply: **Max. slope %** limits every stretch of the fitted road, **Slope penalty** adds the total climb to the road length, **Routing step m** sets the search step, **Min. radius m** limits every curve and **Route tolerance m** keeps the road that far from forbidden areas and bounds how far the models may deviate from the line. A point at the foot of a hill and another on its top produce a longer road (serpentines, a loop or a detour) whenever the direct climb is too steep. Hard routes can take several seconds; if no road satisfies the constraints, the status names the point and the closest approach. Use **Fit models to points** to follow the drawn line itself instead.
+
+### Water and forbidden areas
+
+Road Builder's **Forbidden** tool draws forbidden areas and includes a **Water** section. **Avoid terrain below the water level** treats every ASC cell lower than **Water level m** (0 m by default) as forbidden, which covers the sea without drawing it. **Import water SHP…** reads Polygon, PolygonZ or PolygonM rings as forbidden areas (lakes, sea) and PolyLine, PolyLineZ or PolyLineM parts as rivers with the **River width m** chosen in the import window; coordinates are offset as in the road SHP import and the import is undone as one step. **Route across terrain**, live drawing, **Fit models to points** and the TV4P export check all avoid these areas, and terrain routing keeps at least the route tolerance away from them. **Show forbidden areas** (also **Forbidden areas** in the layer list) shows water below the level in blue, rivers as blue bands at their width and forbidden areas as red outlines. **Remove all forbidden areas** clears drawn and imported areas. Because water is forbidden, a road crossing it cannot be exported; place bridges where the water is not imported or with water detection turned off.

@@ -1,5 +1,5 @@
 use crate::{
-    document::RoutingSettings,
+    document::{ForbiddenLine, RoutingSettings, WaterSettings},
     geometry::{Point, norm, sub},
     terrain::Terrain,
 };
@@ -54,18 +54,37 @@ pub fn blocked_segment(a: Point, b: Point, polygons: &[Vec<Point>]) -> bool {
                     .any(|(c, d)| intersects(a, b, c, d)))
     })
 }
+fn point_segment(p: Point, a: Point, b: Point) -> f64 {
+    let d = sub(b, a);
+    let l = d[0] * d[0] + d[1] * d[1];
+    let t = if l < 1e-12 {
+        0.
+    } else {
+        (((p[0] - a[0]) * d[0] + (p[1] - a[1]) * d[1]) / l).clamp(0., 1.)
+    };
+    norm(sub(p, [a[0] + d[0] * t, a[1] + d[1] * t]))
+}
+/// Shortest distance between two segments; zero when they cross.
+fn segment_distance(a: Point, b: Point, c: Point, d: Point) -> f64 {
+    if blocked_segment(a, b, &[vec![c, d, c]]) || crosses(a, b, c, d) {
+        return 0.;
+    }
+    point_segment(a, c, d)
+        .min(point_segment(b, c, d))
+        .min(point_segment(c, a, b))
+        .min(point_segment(d, a, b))
+}
+fn crosses(a: Point, b: Point, c: Point, d: Point) -> bool {
+    let cross = |a: Point, b: Point, c: Point| (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    cross(a, b, c) * cross(a, b, d) <= 0.
+        && cross(c, d, a) * cross(c, d, b) <= 0.
+        && a[0].max(b[0]) >= c[0].min(d[0])
+        && c[0].max(d[0]) >= a[0].min(b[0])
+        && a[1].max(b[1]) >= c[1].min(d[1])
+        && c[1].max(d[1]) >= a[1].min(b[1])
+}
 /// Shortest distance between a segment and a polygon outline; zero when they touch.
 fn polygon_distance(a: Point, b: Point, poly: &[Point]) -> f64 {
-    fn point_segment(p: Point, a: Point, b: Point) -> f64 {
-        let d = sub(b, a);
-        let l = d[0] * d[0] + d[1] * d[1];
-        let t = if l < 1e-12 {
-            0.
-        } else {
-            (((p[0] - a[0]) * d[0] + (p[1] - a[1]) * d[1]) / l).clamp(0., 1.)
-        };
-        norm(sub(p, [a[0] + d[0] * t, a[1] + d[1] * t]))
-    }
     if blocked_segment(a, b, std::slice::from_ref(&poly.to_vec())) {
         return 0.;
     }
@@ -73,21 +92,276 @@ fn polygon_distance(a: Point, b: Point, poly: &[Point]) -> f64 {
         .copied()
         .zip(poly.iter().copied().cycle().skip(1))
         .take(poly.len())
-        .map(|(c, d)| {
-            point_segment(a, c, d)
-                .min(point_segment(b, c, d))
-                .min(point_segment(c, a, b))
-                .min(point_segment(d, a, b))
-        })
+        .map(|(c, d)| segment_distance(a, b, c, d))
         .fold(f64::INFINITY, f64::min)
 }
-/// Check a polyline against forbidden areas (kept `clearance` metres away), NODATA and
+
+/// Raster of obstacles over the ASC extent with the distance to the nearest obstacle cell.
+struct Grid {
+    origin: Point,
+    resolution: f64,
+    cols: usize,
+    rows: usize,
+    /// Distance in decimetres from the cell to the nearest obstacle cell (0 = obstacle).
+    distance: Vec<u16>,
+}
+impl Grid {
+    fn walk(&self, a: Point, b: Point, mut hit: impl FnMut(usize) -> bool) -> bool {
+        // Amanatides–Woo traversal: every cell the segment touches, nothing skipped.
+        let (ax, ay) = (
+            (a[0] - self.origin[0]) / self.resolution,
+            (a[1] - self.origin[1]) / self.resolution,
+        );
+        let (bx, by) = (
+            (b[0] - self.origin[0]) / self.resolution,
+            (b[1] - self.origin[1]) / self.resolution,
+        );
+        let (mut ix, mut iy) = (ax.floor() as i64, ay.floor() as i64);
+        let (ex, ey) = (bx.floor() as i64, by.floor() as i64);
+        let (dx, dy) = (bx - ax, by - ay);
+        let (sx, sy) = (dx.signum() as i64, dy.signum() as i64);
+        let delta = |d: f64| if d.abs() < 1e-12 { f64::INFINITY } else { 1. / d.abs() };
+        let (tdx, tdy) = (delta(dx), delta(dy));
+        let first = |p: f64, i: i64, d: f64| {
+            if d > 0. {
+                (i as f64 + 1. - p) / d
+            } else if d < 0. {
+                (p - i as f64) / -d
+            } else {
+                f64::INFINITY
+            }
+        };
+        let (mut tx, mut ty) = (first(ax, ix, dx), first(ay, iy, dy));
+        let steps = (ex - ix).abs() + (ey - iy).abs();
+        for _ in 0..=steps {
+            if ix >= 0
+                && iy >= 0
+                && (ix as usize) < self.cols
+                && (iy as usize) < self.rows
+                && hit(iy as usize * self.cols + ix as usize)
+            {
+                return true;
+            }
+            if ix == ex && iy == ey {
+                break;
+            }
+            if tx < ty {
+                tx += tdx;
+                ix += sx;
+            } else {
+                ty += tdy;
+                iy += sy;
+            }
+        }
+        false
+    }
+    fn center(&self, i: usize) -> Point {
+        [
+            self.origin[0] + ((i % self.cols) as f64 + 0.5) * self.resolution,
+            self.origin[1] + ((i / self.cols) as f64 + 0.5) * self.resolution,
+        ]
+    }
+}
+
+/// Everything a road must not cross: drawn forbidden areas, corridors along lines (rivers)
+/// and terrain below the water level. With an ASC they are rasterised once, so each test is
+/// a walk over grid cells regardless of how many vertices the areas have.
+pub struct Obstacles {
+    polygons: Vec<Vec<Point>>,
+    lines: Vec<ForbiddenLine>,
+    grid: Option<Grid>,
+}
+impl Obstacles {
+    /// No obstacles at all.
+    pub fn none() -> Self {
+        Self { polygons: vec![], lines: vec![], grid: None }
+    }
+    pub fn new(
+        polygons: &[Vec<Point>],
+        lines: &[ForbiddenLine],
+        water: &WaterSettings,
+        terrain: Option<&Terrain>,
+        cancel: &AtomicBool,
+    ) -> Result<Self> {
+        let polygons: Vec<_> = polygons.iter().filter(|p| p.len() >= 3).cloned().collect();
+        let lines: Vec<_> = lines.iter().filter(|l| l.points.len() >= 2).cloned().collect();
+        let mut obstacles = Self { polygons, lines, grid: None };
+        let Some(terrain) = terrain else {
+            return Ok(obstacles);
+        };
+        if obstacles.polygons.is_empty() && obstacles.lines.is_empty() && !water.enabled {
+            return Ok(obstacles);
+        }
+        let m = &terrain.meta;
+        let (width, height) = (m.cols as f64 * m.cell, m.rows as f64 * m.cell);
+        let mut resolution = (m.cell / 2.).clamp(1., 2.5);
+        while (width / resolution).ceil() * (height / resolution).ceil() > 40_000_000. {
+            resolution *= 1.25;
+        }
+        let (cols, rows) = (
+            (width / resolution).ceil() as usize,
+            (height / resolution).ceil() as usize,
+        );
+        let mut grid = Grid {
+            origin: [m.east, m.north],
+            resolution,
+            cols,
+            rows,
+            distance: vec![u16::MAX; cols * rows],
+        };
+        if water.enabled {
+            for i in 0..cols * rows {
+                if i % 65536 == 0 {
+                    ensure!(!cancel.load(AO::Relaxed), "Wyznaczanie anulowane");
+                }
+                if terrain.sample(grid.center(i)).is_some_and(|z| z < water.level) {
+                    grid.distance[i] = 0;
+                }
+            }
+        }
+        let mut mark = Vec::new();
+        for poly in &obstacles.polygons {
+            ensure!(!cancel.load(AO::Relaxed), "Wyznaczanie anulowane");
+            // Fill cells whose centre is inside (even-odd), then every cell an edge touches.
+            let (y0, y1) = poly.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), p| {
+                (lo.min(p[1]), hi.max(p[1]))
+            });
+            let r0 = ((y0 - grid.origin[1]) / resolution).floor().max(0.) as usize;
+            let r1 = (((y1 - grid.origin[1]) / resolution).ceil().max(0.) as usize).min(rows);
+            for row in r0..r1 {
+                let y = grid.origin[1] + (row as f64 + 0.5) * resolution;
+                let mut xs: Vec<f64> = poly
+                    .iter()
+                    .zip(poly.iter().cycle().skip(1))
+                    .take(poly.len())
+                    .filter(|(a, b)| (a[1] > y) != (b[1] > y))
+                    .map(|(a, b)| a[0] + (y - a[1]) * (b[0] - a[0]) / (b[1] - a[1]))
+                    .collect();
+                xs.sort_by(f64::total_cmp);
+                for pair in xs.chunks_exact(2) {
+                    let c0 = ((pair[0] - grid.origin[0]) / resolution - 0.5).ceil().max(0.) as usize;
+                    let c1 = ((pair[1] - grid.origin[0]) / resolution - 0.5).floor();
+                    if c1 < 0. {
+                        continue;
+                    }
+                    for col in c0..=(c1 as usize).min(cols - 1) {
+                        grid.distance[row * cols + col] = 0;
+                    }
+                }
+            }
+            for (a, b) in poly.iter().zip(poly.iter().cycle().skip(1)).take(poly.len()) {
+                grid.walk(*a, *b, |i| {
+                    mark.push(i);
+                    false
+                });
+            }
+        }
+        for line in &obstacles.lines {
+            ensure!(!cancel.load(AO::Relaxed), "Wyznaczanie anulowane");
+            let half = line.width / 2.;
+            for w in line.points.windows(2) {
+                grid.walk(w[0], w[1], |i| {
+                    mark.push(i);
+                    false
+                });
+                let reach = half + resolution;
+                let c0 = ((w[0][0].min(w[1][0]) - reach - grid.origin[0]) / resolution).floor().max(0.) as usize;
+                let c1 = (((w[0][0].max(w[1][0]) + reach - grid.origin[0]) / resolution).ceil().max(0.) as usize).min(cols);
+                let r0 = ((w[0][1].min(w[1][1]) - reach - grid.origin[1]) / resolution).floor().max(0.) as usize;
+                let r1 = (((w[0][1].max(w[1][1]) + reach - grid.origin[1]) / resolution).ceil().max(0.) as usize).min(rows);
+                for row in r0..r1 {
+                    for col in c0..c1 {
+                        let i = row * cols + col;
+                        if point_segment(grid.center(i), w[0], w[1]) <= half {
+                            grid.distance[i] = 0;
+                        }
+                    }
+                }
+            }
+        }
+        for i in mark {
+            grid.distance[i] = 0;
+        }
+        // Two-pass chamfer distance (orthogonal and diagonal steps), in decimetres.
+        let straight = (resolution * 10.).round() as u32;
+        let diagonal = (resolution * 10. * std::f64::consts::SQRT_2).round() as u32;
+        let d = &mut grid.distance;
+        let relax = |d: &mut Vec<u16>, i: usize, j: usize, w: u32| {
+            let v = (d[j] as u32 + w).min(u16::MAX as u32) as u16;
+            if v < d[i] {
+                d[i] = v;
+            }
+        };
+        for row in 0..rows {
+            ensure!(!cancel.load(AO::Relaxed), "Wyznaczanie anulowane");
+            for col in 0..cols {
+                let i = row * cols + col;
+                if col > 0 {
+                    relax(d, i, i - 1, straight);
+                }
+                if row > 0 {
+                    relax(d, i, i - cols, straight);
+                    if col > 0 {
+                        relax(d, i, i - cols - 1, diagonal);
+                    }
+                    if col + 1 < cols {
+                        relax(d, i, i - cols + 1, diagonal);
+                    }
+                }
+            }
+        }
+        for row in (0..rows).rev() {
+            for col in (0..cols).rev() {
+                let i = row * cols + col;
+                if col + 1 < cols {
+                    relax(d, i, i + 1, straight);
+                }
+                if row + 1 < rows {
+                    relax(d, i, i + cols, straight);
+                    if col + 1 < cols {
+                        relax(d, i, i + cols + 1, diagonal);
+                    }
+                    if col > 0 {
+                        relax(d, i, i + cols - 1, diagonal);
+                    }
+                }
+            }
+        }
+        obstacles.grid = Some(grid);
+        Ok(obstacles)
+    }
+    /// Whether the segment touches an obstacle or comes closer to one than `clearance`.
+    /// On the raster a positive clearance is enlarged by the cell size and the chamfer error
+    /// (≤ 8.3 %), so a segment that passes keeps at least `clearance` from the real area.
+    pub fn segment_blocked(&self, a: Point, b: Point, clearance: f64) -> bool {
+        if let Some(g) = &self.grid {
+            let limit = if clearance > 0. {
+                ((clearance + g.resolution) * 1.0824 + g.resolution * std::f64::consts::SQRT_2) * 10.
+            } else {
+                0.
+            };
+            return g.walk(a, b, |i| {
+                let d = g.distance[i];
+                d == 0 || (d as f64) < limit
+            });
+        }
+        let polygons = &self.polygons;
+        blocked_segment(a, b, polygons)
+            || (clearance > 0. && polygons.iter().any(|p| polygon_distance(a, b, p) < clearance))
+            || self.lines.iter().any(|l| {
+                l.points
+                    .windows(2)
+                    .any(|w| segment_distance(a, b, w[0], w[1]) <= l.width / 2. + clearance)
+            })
+    }
+}
+/// Check a polyline against obstacles (kept `clearance` metres away), NODATA and
 /// the maximum grade between terrain samples. Returns the total climb `Σ|Δz|`.
 fn profile(
     line: &[Point],
     terrain: &Terrain,
     settings: &RoutingSettings,
-    forbidden: &[Vec<Point>],
+    obstacles: &Obstacles,
     clearance: f64,
 ) -> Option<f64> {
     let spacing = (terrain.meta.cell / 2.).clamp(0.1, 5.);
@@ -95,12 +369,7 @@ fn profile(
     let mut last: Option<f64> = None;
     for (index, w) in line.windows(2).enumerate() {
         let (a, b) = (w[0], w[1]);
-        if blocked_segment(a, b, forbidden)
-            || (clearance > 0.
-                && forbidden
-                    .iter()
-                    .any(|poly| poly.len() >= 3 && polygon_distance(a, b, poly) < clearance))
-        {
+        if obstacles.segment_blocked(a, b, clearance) {
             return None;
         }
         let dist = norm(sub(b, a));
@@ -108,9 +377,6 @@ fn profile(
         for i in usize::from(index > 0)..=steps {
             let f = i as f64 / steps as f64;
             let p = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
-            if forbidden.iter().any(|poly| inside(p, poly)) {
-                return None;
-            }
             let z = terrain.sample(p)?;
             if let Some(old) = last
                 && dist > 1e-8
@@ -130,9 +396,9 @@ pub fn permitted(
     b: Point,
     terrain: &Terrain,
     settings: &RoutingSettings,
-    forbidden: &[Vec<Point>],
+    obstacles: &Obstacles,
 ) -> bool {
-    profile(&[a, b], terrain, settings, forbidden, 0.).is_some()
+    profile(&[a, b], terrain, settings, obstacles, 0.).is_some()
 }
 #[derive(Clone, Copy)]
 struct Node {
@@ -222,7 +488,7 @@ impl CostField {
         terrain: &Terrain,
         waypoints: &[Point],
         s: &RoutingSettings,
-        forbidden: &[Vec<Point>],
+        forbidden: &Obstacles,
         clearance: f64,
         cancel: &AtomicBool,
     ) -> Result<Self> {
@@ -319,7 +585,7 @@ pub fn plan(
     family: &str,
     catalog: &[crate::roads::CatalogPart],
     s: &RoutingSettings,
-    forbidden: &[Vec<Point>],
+    forbidden: &Obstacles,
     cancel: &AtomicBool,
 ) -> Result<Vec<crate::roads::PlacedPart>> {
     let allowed = |a, b| !cancel.load(AO::Relaxed) && permitted(a, b, terrain, s, forbidden);
@@ -348,7 +614,7 @@ pub fn find(
     terrain: &Terrain,
     waypoints: &[Point],
     s: &RoutingSettings,
-    forbidden: &[Vec<Point>],
+    forbidden: &Obstacles,
     cancel: &AtomicBool,
 ) -> Result<Vec<Point>> {
     ensure!(waypoints.len() >= 2, "Wskaż przynajmniej dwa punkty");
@@ -427,7 +693,7 @@ fn leg(
     stage: usize,
     starts: &[Start],
     s: &RoutingSettings,
-    forbidden: &[Vec<Point>],
+    forbidden: &Obstacles,
     field: &CostField,
     cancel: &AtomicBool,
 ) -> Result<Vec<Arrival>> {
@@ -469,7 +735,7 @@ fn leg_search(
     stage: usize,
     starts: &[Start],
     s: &RoutingSettings,
-    forbidden: &[Vec<Point>],
+    forbidden: &Obstacles,
     field: &CostField,
     cancel: &AtomicBool,
     weight: f64,
@@ -669,6 +935,8 @@ mod tests {
         let cancel = AtomicBool::new(false);
         let terrain = crate::terrain::import(&source, &dir, &cancel).unwrap();
         let forbidden = vec![vec![[85., 60.], [125., 60.], [125., 150.], [85., 150.]]];
+        let obstacles =
+            Obstacles::new(&forbidden, &[], &WaterSettings::default(), Some(&terrain), &cancel).unwrap();
         let settings = RoutingSettings {
             cell: 10.,
             ..Default::default()
@@ -677,7 +945,7 @@ mod tests {
             &terrain,
             &[[25., 105.], [185., 105.]],
             &settings,
-            &forbidden,
+            &obstacles,
             &cancel,
         )
         .unwrap();
@@ -686,7 +954,7 @@ mod tests {
         assert_eq!(*path.last().unwrap(), [185., 105.]);
         assert!(
             path.windows(2)
-                .all(|w| permitted(w[0], w[1], &terrain, &settings, &forbidden))
+                .all(|w| permitted(w[0], w[1], &terrain, &settings, &obstacles))
         );
         assert!(blocked_segment([0., 100.], [200., 100.], &forbidden));
         assert!(!blocked_segment([0., 20.], [200., 20.], &forbidden));
@@ -696,7 +964,7 @@ mod tests {
                 &terrain,
                 &[[25., 105.], [185., 105.]],
                 &settings,
-                &[],
+                &Obstacles::none(),
                 &cancel
             )
             .is_err()
@@ -709,8 +977,8 @@ mod tests {
         std::fs::write(&source, text).unwrap();
         cancel.store(false, AO::Relaxed);
         let t = crate::terrain::import(&source, &dir, &cancel).unwrap();
-        assert!(!permitted([5., 5.], [15., 5.], &t, &settings, &[]));
-        assert!(find(&t, &[[5., 5.], [25., 5.]], &settings, &[], &cancel).is_err());
+        assert!(!permitted([5., 5.], [15., 5.], &t, &settings, &Obstacles::none()));
+        assert!(find(&t, &[[5., 5.], [25., 5.]], &settings, &Obstacles::none(), &cancel).is_err());
         drop(t);
         std::fs::remove_dir_all(dir).unwrap();
     }
@@ -751,7 +1019,7 @@ mod tests {
             .fold(f64::INFINITY, f64::min)
     }
     fn climb(path: &[Point], t: &Terrain) -> f64 {
-        profile(path, t, &RoutingSettings { max_grade: 1e9, ..Default::default() }, &[], 0.).unwrap()
+        profile(path, t, &RoutingSettings { max_grade: 1e9, ..Default::default() }, &Obstacles::none(), 0.).unwrap()
     }
 
     #[test]
@@ -760,13 +1028,13 @@ mod tests {
         let cancel = AtomicBool::new(false);
         let s = RoutingSettings::default();
         let waypoints = [[40., 300.], [300., 80.], [560., 300.]];
-        let path = find(&t, &waypoints, &s, &[], &cancel).unwrap();
+        let path = find(&t, &waypoints, &s, &Obstacles::none(), &cancel).unwrap();
         for w in waypoints {
             assert!(path.iter().any(|p| norm(sub(*p, w)) < 1e-6), "route misses {w:?}");
         }
         assert_eq!(path[0], waypoints[0]);
         assert_eq!(*path.last().unwrap(), waypoints[2]);
-        assert!(path.windows(2).all(|w| permitted(w[0], w[1], &t, &s, &[])));
+        assert!(path.windows(2).all(|w| permitted(w[0], w[1], &t, &s, &Obstacles::none())));
         // Sampled arcs: allow the chord approximation of the exact radius.
         assert!(tightest_radius(&path) >= s.min_radius * 0.98, "{}", tightest_radius(&path));
         // The heading stays continuous through the intermediate waypoint.
@@ -774,13 +1042,13 @@ mod tests {
         let kink = turn(heading(path[i - 1], path[i]), heading(path[i], path[i + 1])).abs();
         assert!(kink < 3f64.to_radians(), "{kink}");
         // Straight over the summit would exceed 12 %; the route detours.
-        assert!(!permitted(waypoints[0], waypoints[2], &t, &s, &[]));
-        let direct = find(&t, &[waypoints[0], waypoints[2]], &s, &[], &cancel).unwrap();
-        assert!(direct.windows(2).all(|w| permitted(w[0], w[1], &t, &s, &[])));
+        assert!(!permitted(waypoints[0], waypoints[2], &t, &s, &Obstacles::none()));
+        let direct = find(&t, &[waypoints[0], waypoints[2]], &s, &Obstacles::none(), &cancel).unwrap();
+        assert!(direct.windows(2).all(|w| permitted(w[0], w[1], &t, &s, &Obstacles::none())));
         assert!(direct.iter().all(|p| norm(sub(*p, [300., 300.])) > 100.));
 
         let wide = RoutingSettings { min_radius: 120., ..Default::default() };
-        let path = find(&t, &waypoints, &wide, &[], &cancel).unwrap();
+        let path = find(&t, &waypoints, &wide, &Obstacles::none(), &cancel).unwrap();
         assert!(tightest_radius(&path) >= wide.min_radius * 0.98);
         drop(t);
         std::fs::remove_dir_all(dir).unwrap();
@@ -796,10 +1064,10 @@ mod tests {
         let mut lengths = Vec::new();
         for (max_grade, min_radius) in [(12., 25.), (15., 15.), (20., 40.)] {
             let s = RoutingSettings { max_grade, min_radius, cell: 10., ..Default::default() };
-            assert!(!permitted(a, b, &t, &s, &[]));
-            let path = find(&t, &[a, b], &s, &[], &cancel).unwrap();
+            assert!(!permitted(a, b, &t, &s, &Obstacles::none()));
+            let path = find(&t, &[a, b], &s, &Obstacles::none(), &cancel).unwrap();
             assert_eq!((path[0], *path.last().unwrap()), (a, b));
-            assert!(path.windows(2).all(|w| permitted(w[0], w[1], &t, &s, &[])));
+            assert!(path.windows(2).all(|w| permitted(w[0], w[1], &t, &s, &Obstacles::none())));
             assert!(tightest_radius(&path) >= min_radius * 0.98);
             let length: f64 = path.windows(2).map(|w| norm(sub(w[1], w[0]))).sum();
             let rise = t.sample(b).unwrap() - t.sample(a).unwrap();
@@ -810,7 +1078,7 @@ mod tests {
         assert!(lengths[0] > lengths[2] * 1.2, "{lengths:?}");
         // Too strict for any road: the failure names the leg and the closest approach.
         let s = RoutingSettings { max_grade: 2., min_radius: 200., cell: 10., ..Default::default() };
-        let err = find(&t, &[a, b], &s, &[], &cancel).unwrap_err().to_string();
+        let err = find(&t, &[a, b], &s, &Obstacles::none(), &cancel).unwrap_err().to_string();
         assert!(err.contains("Do punktu 2 dojechano najbliżej"), "{err}");
         drop(t);
         std::fs::remove_dir_all(dir).unwrap();
@@ -823,17 +1091,18 @@ mod tests {
         let waypoints = [[40., 300.], [560., 300.]];
         let flat = RoutingSettings { max_grade: 100., slope_weight: 0., ..Default::default() };
         let steep = RoutingSettings { slope_weight: 30., ..flat.clone() };
-        let short = find(&t, &waypoints, &flat, &[], &cancel).unwrap();
-        let gentle = find(&t, &waypoints, &steep, &[], &cancel).unwrap();
+        let short = find(&t, &waypoints, &flat, &Obstacles::none(), &cancel).unwrap();
+        let gentle = find(&t, &waypoints, &steep, &Obstacles::none(), &cancel).unwrap();
         let length = |p: &[Point]| p.windows(2).map(|w| norm(sub(w[1], w[0]))).sum::<f64>();
         assert!(length(&short) < 525.);
         assert!(climb(&gentle, &t) < climb(&short, &t) * 0.6);
         assert!(length(&gentle) > length(&short));
 
         let zone = vec![vec![[280., 200.], [320., 200.], [320., 400.], [280., 400.]]];
+        let zones = Obstacles::new(&zone, &[], &WaterSettings::default(), Some(&t), &cancel).unwrap();
         for tolerance in [2., 15.] {
             let s = RoutingSettings { tolerance, ..flat.clone() };
-            let path = find(&t, &waypoints, &s, &zone, &cancel).unwrap();
+            let path = find(&t, &waypoints, &s, &zones, &cancel).unwrap();
             let gap = path
                 .windows(2)
                 .map(|w| polygon_distance(w[0], w[1], &zone[0]))
@@ -841,7 +1110,7 @@ mod tests {
             assert!(gap >= tolerance - 1e-6, "{gap} < {tolerance}");
         }
         let s = RoutingSettings { tolerance: 30., ..flat.clone() };
-        assert!(find(&t, &[[255., 300.], [560., 300.]], &s, &zone, &cancel).is_err());
+        assert!(find(&t, &[[255., 300.], [560., 300.]], &s, &zones, &cancel).is_err());
         drop(t);
         std::fs::remove_dir_all(dir).unwrap();
     }
@@ -876,7 +1145,7 @@ mod tests {
         ] {
             let (dir, t) = hill(name, height, sigma);
             let s = RoutingSettings { cell, max_grade, ..Default::default() };
-            let parts = plan(&t, &waypoints, "asf2", &catalog, &s, &[], &cancel).unwrap();
+            let parts = plan(&t, &waypoints, "asf2", &catalog, &s, &Obstacles::none(), &cancel).unwrap();
             let road = centerline(&parts, &catalog);
             let end = *waypoints.last().unwrap();
             assert!(norm(sub(endpoint(&parts, &catalog).unwrap().p, end)) <= s.tolerance);
@@ -885,9 +1154,99 @@ mod tests {
                 assert!(miss <= s.tolerance, "{w:?} missed by {miss}");
             }
             // The fitted models themselves respect the maximum grade.
-            assert!(road.windows(2).all(|w| permitted(w[0], w[1], &t, &s, &[])));
+            assert!(road.windows(2).all(|w| permitted(w[0], w[1], &t, &s, &Obstacles::none())));
             drop(t);
             std::fs::remove_dir_all(dir).unwrap();
         }
+    }
+
+    /// 610 × 610 m flat land at 5 m with a sea bay at -3 m (x 200–400, y 0–350).
+    fn bay(name: &str) -> (std::path::PathBuf, Terrain) {
+        let dir = std::env::temp_dir().join(format!("road-bay-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut text = "ncols 61\nnrows 61\nxllcorner 0\nyllcorner 0\ncellsize 10\n".to_owned();
+        for row in 0..61 {
+            for col in 0..61 {
+                let (x, y) = (col as f64 * 10. + 5., (60 - row) as f64 * 10. + 5.);
+                let sea = (200. ..=400.).contains(&x) && y <= 350.;
+                text.push_str(if sea { "-3 " } else { "5 " });
+            }
+            text.push('\n');
+        }
+        let source = dir.join("bay.asc");
+        std::fs::write(&source, text).unwrap();
+        let terrain = crate::terrain::import(&source, &dir, &AtomicBool::new(false)).unwrap();
+        (dir, terrain)
+    }
+    fn length(path: &[Point]) -> f64 {
+        path.windows(2).map(|w| norm(sub(w[1], w[0]))).sum()
+    }
+
+    #[test]
+    fn water_below_level_is_avoided_only_when_enabled() {
+        let (dir, t) = bay("level");
+        let cancel = AtomicBool::new(false);
+        let s = RoutingSettings { max_grade: 100., ..Default::default() };
+        let (a, b) = ([100., 200.], [500., 200.]);
+        let dry = Obstacles::new(&[], &[], &WaterSettings::default(), Some(&t), &cancel).unwrap();
+        let straight = find(&t, &[a, b], &s, &dry, &cancel).unwrap();
+        assert!(length(&straight) < 420.);
+        let water = WaterSettings { enabled: true, level: 0. };
+        let sea = Obstacles::new(&[], &[], &water, Some(&t), &cancel).unwrap();
+        let path = find(&t, &[a, b], &s, &sea, &cancel).unwrap();
+        // Around the head of the bay, never over terrain below the water level.
+        assert!(path.iter().any(|p| p[1] > 350. + s.tolerance));
+        for w in path.windows(2) {
+            let n = (norm(sub(w[1], w[0])) / 0.5).ceil() as usize;
+            for i in 0..=n {
+                let f = i as f64 / n.max(1) as f64;
+                let p = [w[0][0] + (w[1][0] - w[0][0]) * f, w[0][1] + (w[1][1] - w[0][1]) * f];
+                assert!(t.sample(p).unwrap() >= 0., "{p:?} is under water");
+            }
+        }
+        // A point placed in the sea is refused.
+        assert!(find(&t, &[a, [300., 100.]], &s, &sea, &cancel).is_err());
+        // A higher water level floods all land.
+        let flood = WaterSettings { enabled: true, level: 10. };
+        let flooded = Obstacles::new(&[], &[], &flood, Some(&t), &cancel).unwrap();
+        assert!(find(&t, &[a, b], &s, &flooded, &cancel).is_err());
+        drop(t);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn river_lines_keep_their_width_and_tolerance_even_with_many_vertices() {
+        let (dir, t) = hill("river", 0., 60.);
+        let cancel = AtomicBool::new(false);
+        let s = RoutingSettings::default();
+        let (a, b) = ([100., 200.], [500., 200.]);
+        // A meandering river from the south edge to y = 450, sampled every 0.1 m.
+        let points: Vec<Point> = (0..=4600)
+            .map(|i| {
+                let y = -10. + i as f64 * 0.1;
+                [300. + 8. * (y / 25.).sin(), y]
+            })
+            .collect();
+        let river = ForbiddenLine { points, width: 20. };
+        let obstacles =
+            Obstacles::new(&[], std::slice::from_ref(&river), &WaterSettings::default(), Some(&t), &cancel)
+                .unwrap();
+        let started = std::time::Instant::now();
+        let path = find(&t, &[a, b], &s, &obstacles, &cancel).unwrap();
+        assert!(started.elapsed().as_secs_f64() < 30., "{:?}", started.elapsed());
+        assert!(path.iter().any(|p| p[1] > 450.));
+        let gap = path
+            .windows(2)
+            .flat_map(|w| river.points.windows(2).map(move |r| segment_distance(w[0], w[1], r[0], r[1])))
+            .fold(f64::INFINITY, f64::min);
+        assert!(gap >= river.width / 2. + s.tolerance - 1e-6, "{gap}");
+        // Without terrain the same test uses exact geometry.
+        let exact = Obstacles::new(&[], std::slice::from_ref(&river), &WaterSettings::default(), None, &cancel)
+            .unwrap();
+        assert!(exact.segment_blocked([250., 200.], [350., 200.], 0.));
+        assert!(!exact.segment_blocked([250., 470.], [350., 470.], 0.));
+        drop(t);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

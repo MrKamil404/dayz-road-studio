@@ -57,6 +57,19 @@ impl Default for RoutingSettings {
         }
     }
 }
+/// Forbidden corridor along a line, e.g. a river imported from SHP.
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+pub struct ForbiddenLine {
+    pub points: Vec<Point>,
+    /// Full width of the corridor in metres.
+    pub width: f64,
+}
+/// Terrain below `level` (ASC metres) counts as a forbidden area when `enabled`.
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug, Default)]
+pub struct WaterSettings {
+    pub enabled: bool,
+    pub level: f64,
+}
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Document {
     pub version: u32,
@@ -81,6 +94,10 @@ pub struct Document {
     pub transforms: Vec<(u32, Point, f64)>,
     pub forbidden: Vec<Vec<Point>>,
     #[serde(default)]
+    pub forbidden_lines: Vec<ForbiddenLine>,
+    #[serde(default)]
+    pub water: WaterSettings,
+    #[serde(default)]
     pub road_colors: crate::road_colors::Palette,
 }
 impl Default for Document {
@@ -101,6 +118,8 @@ impl Default for Document {
             deleted: vec![],
             transforms: vec![],
             forbidden: vec![],
+            forbidden_lines: vec![],
+            water: WaterSettings::default(),
             road_colors: Default::default(),
         }
     }
@@ -151,6 +170,15 @@ impl Document {
                 .all(|x| x.is_finite()),
             "Nieprawidłowy obszar zakazany"
         );
+        ensure!(
+            self.forbidden_lines.iter().all(|l| l.points.len() >= 2
+                && l.points.iter().flatten().all(|x| x.is_finite())
+                && l.width.is_finite()
+                && l.width > 0.
+                && l.width <= 2000.),
+            "Nieprawidłowa linia zakazana"
+        );
+        ensure!(self.water.level.is_finite(), "Nieprawidłowy poziom wody");
         ensure!(
             self.transforms
                 .iter()

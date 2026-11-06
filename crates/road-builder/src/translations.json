@@ -1695,5 +1695,81 @@
 {"en":"Drag a point to reshape the route. Double-click the line to add a point; double-right-click a point to remove it. Fit models again after editing.","pl":"Przeciągnij punkt, aby zmienić trasę. Podwójny klik na linii dodaje punkt; podwójny prawy klik na punkcie usuwa go. Po edycji dopasuj modele ponownie."},
 {"en":"Blending width on each side [m]","pl":"Szerokość wygładzania z każdej strony [m]"},
 {"en":"Smooth road profile with a gradual transition to surrounding terrain. Width is measured from segment edges; 0 m changes only the MLOD footprint.","pl":"Płynny profil pod drogą i łagodne przejście do otaczającego terenu. Szerokość liczona od krawędzi partów; 0 m zmienia tylko obrys MLOD."},
-{"en":"Invalid terrain blending width","pl":"Nieprawidłowa szerokość wygładzania terenu"}
+{"en":"Invalid terrain blending width","pl":"Nieprawidłowa szerokość wygładzania terenu"},
+  {
+    "pl": "Zaimportowano wodę: {0} obszarów i {1} linii. Wyznaczanie trasy je omija.",
+    "en": "Imported water: {0} areas and {1} lines. Terrain routing avoids them."
+  },
+  {
+    "pl": "Szerokość rzek m",
+    "en": "River width m"
+  },
+  {
+    "pl": "Importuj wodę",
+    "en": "Import water"
+  },
+  {
+    "pl": "Omijaj teren poniżej poziomu wody",
+    "en": "Avoid terrain below the water level"
+  },
+  {
+    "pl": "Wczytaj ASC, aby wykrywać wodę z wysokości.",
+    "en": "Load an ASC to detect water from heights."
+  },
+  {
+    "pl": "Polygon: jeziora i morze jako obszary zakazane. PolyLine: rzeki o podanej szerokości.",
+    "en": "Polygon: lakes and sea as forbidden areas. PolyLine: rivers of the given width."
+  },
+  {
+    "pl": "Pokaż obszary zakazane",
+    "en": "Show forbidden areas"
+  },
+  {
+    "pl": "Usuń wszystkie obszary zakazane",
+    "en": "Remove all forbidden areas"
+  },
+  {
+    "pl": "Nieprawidłowa linia zakazana",
+    "en": "Invalid forbidden line"
+  },
+  {
+    "pl": "Nieprawidłowy poziom wody",
+    "en": "Invalid water level"
+  },
+  {
+    "pl": "SHP nie zawiera obszarów ani linii wody",
+    "en": "The SHP contains no water areas or lines"
+  },
+  {
+    "pl": "SHP musi zawierać PolyLine lub Polygon (także Z/M). Typ SHP: {0}",
+    "en": "The SHP must contain PolyLine or Polygon (also Z/M). SHP type: {0}"
+  },
+  {
+    "pl": "Woda",
+    "en": "Water"
+  },
+  {
+    "pl": "Poziom wody m",
+    "en": "Water level m"
+  },
+  {
+    "pl": "Obszary zakazane",
+    "en": "Forbidden areas"
+  },
+  {
+    "pl": "Import wody SHP…",
+    "en": "Import water SHP…"
+  },
+  {
+    "pl": "Import wody SHP",
+    "en": "Import water SHP"
+  },
+  {
+    "pl": "Polygon / PolygonZ / PolygonM: obszary wody. PolyLine / PolyLineZ / PolyLineM: rzeki.",
+    "en": "Polygon / PolygonZ / PolygonM: water areas. PolyLine / PolyLineZ / PolyLineM: rivers."
+  },
+  {
+    "pl": "Obszary: {0} · linie wody: {1}",
+    "en": "Areas: {0} · water lines: {1}"
+  }
 ]

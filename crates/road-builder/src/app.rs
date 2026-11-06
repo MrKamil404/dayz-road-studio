@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, ensure};
 use dayz_road_tool::{
-    document::{Document, Route},
+    document::{Document, ForbiddenLine, Route, WaterSettings},
     geometry::{self, Library, Point, Shape},
     png,
     raster::Raster,
@@ -62,6 +62,8 @@ enum Loaded {
     Shp(Vec<dayz_road_tool::shapefile::Line>, String, String),
     Graded(PathBuf, Terrain, usize),
     AscExport(PathBuf),
+    /// Water areas and river centre lines from SHP, with the river width.
+    Water(Vec<Vec<Point>>, Vec<Vec<Point>>, f64),
 }
 #[derive(Clone)]
 struct Generated {
@@ -85,6 +87,8 @@ struct ShpDialog {
     offset: Point,
     family: String,
     projection: Option<String>,
+    /// Water import with this river width instead of a road import.
+    water: Option<f64>,
 }
 struct Job {
     rx: Receiver<Result<Loaded>>,
@@ -96,6 +100,36 @@ struct Preview {
     id: Selection,
     shape: Shape,
     bounds: [f64; 4],
+}
+/// Obstacles rasterised for the current forbidden areas, water and ASC, shared by jobs so
+/// the raster is built once and rebuilt only after those inputs change.
+type ObstacleCache = Arc<std::sync::Mutex<Option<(u64, Arc<routing::Obstacles>)>>>;
+/// Everything a job needs to obtain the obstacles for its terrain.
+struct ObstacleInput {
+    key: u64,
+    forbidden: Vec<Vec<Point>>,
+    lines: Vec<ForbiddenLine>,
+    water: WaterSettings,
+    cache: ObstacleCache,
+}
+impl ObstacleInput {
+    fn get(&self, terrain: Option<&Terrain>, cancel: &AtomicBool) -> Result<Arc<routing::Obstacles>> {
+        let mut cached = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((key, obstacles)) = &*cached
+            && *key == self.key
+        {
+            return Ok(obstacles.clone());
+        }
+        let obstacles = Arc::new(routing::Obstacles::new(
+            &self.forbidden,
+            &self.lines,
+            &self.water,
+            terrain,
+            cancel,
+        )?);
+        *cached = Some((self.key, obstacles.clone()));
+        Ok(obstacles)
+    }
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Selection {
@@ -148,6 +182,9 @@ pub struct App {
     live_action: Option<(Vec<Point>, bool)>,
     live_tick: Instant,
     shp_dialog: Option<ShpDialog>,
+    obstacles: ObstacleCache,
+    show_forbidden: bool,
+    water_overlay: Option<(u64, TextureHandle, [f64; 4])>,
     png_settings: PngSettings,
     png_job: Option<Receiver<Result<String>>>,
 }
@@ -376,7 +413,7 @@ impl App {
         }
     }
     fn initial() -> Self {
-        Self {png_settings: PngSettings::default(),png_job: None,language: Default::default(),doc:Document::default(),file:None,dirty:false,undo:vec![],redo:vec![],base:None,catalog:vec![],lib:Library::new(Document::default().models),warnings:vec![],raster:None,terrain:None,terrain_dir:None,jobs:vec![],center:[207680.,7680.],scale:0.05,tool:Tool::Draw,selected:None,draft:vec![],family:String::new(),model:0,reverse:false,angle:90.,previews:vec![],index:HashMap::new(),tiles:HashMap::new(),tile_age:vec![],status:"Otwórz TV4P, wybierz modele MLOD i wczytaj mapę. Punkty trasy dodajesz kliknięciem.".into(),contours:true,interval:10.,opacity:1.,show_sat:true,show_roads:true,drag_point:None,drag_snapshot:false,contour_cache:vec![],contour_key:None,live_epoch:0,live_job:None,live_candidate:None,live_confirmed:None,live_action:None,live_tick:Instant::now()-Duration::from_secs(1),shp_dialog:None}
+        Self {png_settings: PngSettings::default(),png_job: None,language: Default::default(),doc:Document::default(),file:None,dirty:false,undo:vec![],redo:vec![],base:None,catalog:vec![],lib:Library::new(Document::default().models),warnings:vec![],raster:None,terrain:None,terrain_dir:None,jobs:vec![],center:[207680.,7680.],scale:0.05,tool:Tool::Draw,selected:None,draft:vec![],family:String::new(),model:0,reverse:false,angle:90.,previews:vec![],index:HashMap::new(),tiles:HashMap::new(),tile_age:vec![],status:"Otwórz TV4P, wybierz modele MLOD i wczytaj mapę. Punkty trasy dodajesz kliknięciem.".into(),contours:true,interval:10.,opacity:1.,show_sat:true,show_roads:true,drag_point:None,drag_snapshot:false,contour_cache:vec![],contour_key:None,live_epoch:0,live_job:None,live_candidate:None,live_confirmed:None,live_action:None,live_tick:Instant::now()-Duration::from_secs(1),shp_dialog:None,obstacles:Default::default(),show_forbidden:true,water_overlay:None}
     }
     fn checkpoint(&mut self) {
         self.undo.push(self.doc.clone());
@@ -431,6 +468,7 @@ impl App {
             self.doc.deleted = d.deleted;
             self.doc.transforms = d.transforms;
             self.doc.forbidden = d.forbidden;
+            self.doc.forbidden_lines = d.forbidden_lines;
             self.doc.terrain = d.terrain;
             self.doc.terrain_cache = d.terrain_cache;
             self.doc.terrain_origin = d.terrain_origin;
@@ -592,6 +630,18 @@ impl App {
                         "Zapisano {}. Sprawdź wynik w Terrain Builder.",
                         path.display()
                     )
+                }
+                Ok(Loaded::Water(areas, lines, width)) => {
+                    self.checkpoint();
+                    let (a, l) = (areas.len(), lines.len());
+                    self.doc.forbidden.extend(areas);
+                    self.doc
+                        .forbidden_lines
+                        .extend(lines.into_iter().map(|points| ForbiddenLine { points, width }));
+                    self.show_forbidden = true;
+                    self.status = format!(
+                        "Zaimportowano wodę: {a} obszarów i {l} linii. Wyznaczanie trasy je omija."
+                    );
                 }
                 Ok(Loaded::Shp(lines, family, stem)) => {
                     self.checkpoint();
@@ -844,6 +894,32 @@ impl App {
         self.selected = Some(Selection::Route(index));
         self.status = "Trasa zapisana. Dopasuj modele lub uruchom automat.".into();
     }
+    fn obstacle_input(&self) -> ObstacleInput {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        for poly in &self.doc.forbidden {
+            poly.len().hash(&mut h);
+            poly.iter().flatten().for_each(|v| v.to_bits().hash(&mut h));
+        }
+        for line in &self.doc.forbidden_lines {
+            line.width.to_bits().hash(&mut h);
+            line.points.len().hash(&mut h);
+            line.points.iter().flatten().for_each(|v| v.to_bits().hash(&mut h));
+        }
+        self.doc.water.enabled.hash(&mut h);
+        self.doc.water.level.to_bits().hash(&mut h);
+        self.terrain_dir.hash(&mut h);
+        if let Some(t) = &self.terrain {
+            [t.meta.east, t.meta.north, t.meta.cell].map(f64::to_bits).hash(&mut h);
+        }
+        ObstacleInput {
+            key: h.finish(),
+            forbidden: self.doc.forbidden.clone(),
+            lines: self.doc.forbidden_lines.clone(),
+            water: self.doc.water.clone(),
+            cache: self.obstacles.clone(),
+        }
+    }
     fn generate(&mut self, automatic: bool) {
         let Some(Selection::Route(index)) = self.selected else {
             self.status = "Wybierz narysowaną trasę".into();
@@ -852,7 +928,7 @@ impl App {
         let route = self.doc.routes[index].clone();
         let settings = self.doc.routing.clone();
         let catalog = self.catalog.clone();
-        let forbidden = self.doc.forbidden.clone();
+        let obstacles = self.obstacle_input();
         let dir = self.terrain_dir.clone();
         let meta = self.terrain.as_ref().map(|t| t.meta.clone());
         self.start(
@@ -868,6 +944,7 @@ impl App {
                     }
                     t
                 });
+                let forbidden = obstacles.get(terrain.as_ref(), &cancel)?;
                 let parts = if automatic {
                     // The terrain route already respects the minimum radius and passes
                     // through every waypoint; it is fitted without rounding it again.
@@ -888,7 +965,7 @@ impl App {
                             && terrain
                                 .as_ref()
                                 .map(|t| routing::permitted(a, b, t, &settings, &forbidden))
-                                .unwrap_or_else(|| !routing::blocked_segment(a, b, &forbidden))
+                                .unwrap_or_else(|| !forbidden.segment_blocked(a, b, 0.))
                     })?
                 };
                 ensure!(!cancel.load(Ordering::Relaxed), "Anulowano");
@@ -943,6 +1020,7 @@ impl App {
         {
             let d = self.doc.clone();
             let c = self.catalog.clone();
+            let obstacles = self.obstacle_input();
             let terrain_dir = self.terrain_dir.clone();
             let meta = self.terrain.as_ref().map(|t| t.meta.clone());
             self.start("Zapis i weryfikacja TV4P", move |cancel| {
@@ -955,6 +1033,7 @@ impl App {
                         }
                         t
                     });
+                let forbidden = obstacles.get(terrain.as_ref(), &cancel)?;
                 for route in &d.routes {
                     let line = roads::centerline(&route.parts, &c);
                     for w in line.windows(2) {
@@ -967,13 +1046,9 @@ impl App {
                                     w[1],
                                     t,
                                     &d.routing,
-                                    &d.forbidden
+                                    &forbidden
                                 ))
-                                .unwrap_or_else(|| !routing::blocked_segment(
-                                    w[0],
-                                    w[1],
-                                    &d.forbidden
-                                )),
+                                .unwrap_or_else(|| !forbidden.segment_blocked(w[0], w[1], 0.)),
                             "Droga {} przecina obszar zakazany lub nie spełnia ograniczeń ASC",
                             route.name
                         );
@@ -1039,7 +1114,7 @@ if ui.button(lang.tr("Ponów")).on_hover_text(lang.tr("Ponów · Ctrl+Y")).click
             if ui.button(lang.tr("Folder modeli MLOD…")).clicked() && let Some(p)=rfd::FileDialog::new().pick_folder(){self.doc.models=p;self.dirty=true;if let Some(p)=self.doc.base.clone(){self.load_base(p);}}
             ui.small(lang.tr(&(self.doc.models.display().to_string())));
             let families:BTreeSet<_>=self.catalog.iter().map(|p|p.family.clone()).collect();egui::ComboBox::from_label(lang.tr("Typ")).selected_text(lang.tr(&self.family)).show_ui(ui,|ui|{for f in families {ui.selectable_value(&mut self.family,f.clone(),lang.tr(&(f)));}});
-            if ui.button(lang.tr("Import dróg SHP…")).clicked() && let Some(path)=rfd::FileDialog::new().add_filter(lang.tr("Shapefile"),&["shp"]).pick_file(){let projection=std::fs::read_to_string(path.with_extension("prj")).ok().map(|p|p.chars().take(4000).collect());self.shp_dialog=Some(ShpDialog{path,offset:[0.,0.],family:self.family.clone(),projection});}
+            if ui.button(lang.tr("Import dróg SHP…")).clicked() && let Some(path)=rfd::FileDialog::new().add_filter(lang.tr("Shapefile"),&["shp"]).pick_file(){let projection=std::fs::read_to_string(path.with_extension("prj")).ok().map(|p|p.chars().take(4000).collect());self.shp_dialog=Some(ShpDialog{path,offset:[0.,0.],family:self.family.clone(),projection,water:None});}
             if self.tool==Tool::Segments {
                 egui::ComboBox::from_label(lang.tr("Model")).selected_text(lang.tr(self.catalog.get(self.model).map(|p|p.path.rsplit(['\\','/']).next().unwrap_or("")).unwrap_or("Brak MLOD"))).show_ui(ui,|ui|{for (i,p) in self.catalog.iter().enumerate().filter(|(_,p)|p.family==self.family) {ui.selectable_value(&mut self.model,i,lang.tr(p.path.rsplit(['\\','/']).next().unwrap_or("") ));}});
                 ui.checkbox(&mut self.reverse,lang.tr("Odwróć zakręt"));ui.horizontal(|ui|{ui.label(lang.tr("Kierunek startu °"));ui.add(egui::DragValue::new(&mut self.angle).speed(1.));});ui.small(lang.tr("Kliknij początek. Kolejne segmenty dodasz przyciskiem."));
@@ -1049,6 +1124,7 @@ if ui.button(lang.tr("Ponów")).on_hover_text(lang.tr("Ponów · Ctrl+Y")).click
                 if ui.button(lang.tr("Zakończ rysowanie")).clicked(){self.finish();}
 if ui.button(lang.tr("Usuń ostatni punkt")).clicked(){self.draft.pop();self.clear_live();}
                 if self.tool==Tool::Live{ui.small(lang.tr("Zielone segmenty: przewidywany przebieg. Klik zatwierdza poprawne dopasowanie. Enter zapisuje gotową drogę."));}
+                if self.tool==Tool::Forbidden{self.forbidden_controls(ui);}
             }
             if self.tool==Tool::Edit {ui.small(lang.tr("Przeciągnij punkt, aby zmienić trasę. Podwójny klik na linii dodaje punkt; podwójny prawy klik na punkcie usuwa go. Po edycji dopasuj modele ponownie."));}
             ui.separator();ui.heading(lang.tr("Trasy projektu"));
@@ -1092,6 +1168,7 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
                         ui.add(egui::Slider::new(&mut self.opacity, 0.0..=1.0).text("Widoczność"));
                         ui.checkbox(&mut self.show_roads,lang.tr("Modele dróg"));
                         ui.checkbox(&mut self.contours,lang.tr("Poziomice"));
+                        ui.checkbox(&mut self.show_forbidden,lang.tr("Obszary zakazane"));
                         ui.horizontal(|ui| {
                             ui.label(lang.tr("Odstęp m"));
                             ui.add(
@@ -1256,6 +1333,8 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
             &self.family,
             &self.doc.routing,
             &self.doc.forbidden,
+            &self.doc.forbidden_lines,
+            &self.doc.water,
             &self.doc.terrain_origin,
             &self.terrain_dir,
             &self.doc.models,
@@ -1272,7 +1351,7 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
         let family = self.family.clone();
         let catalog = self.catalog.clone();
         let settings = self.doc.routing.clone();
-        let forbidden = self.doc.forbidden.clone();
+        let obstacles = self.obstacle_input();
         let dir = self.terrain_dir.clone();
         let meta = self.terrain.as_ref().map(|t| t.meta.clone());
         let cancel = Arc::new(AtomicBool::new(false));
@@ -1287,12 +1366,13 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
                         }
                         t
                     });
+                    let forbidden = obstacles.get(terrain.as_ref(), &flag)?;
                     let parts = roads::fit(&input, &family, &catalog, &settings, |a, b| {
                         !flag.load(Ordering::Relaxed)
                             && terrain
                                 .as_ref()
                                 .map(|t| routing::permitted(a, b, t, &settings, &forbidden))
-                                .unwrap_or_else(|| !routing::blocked_segment(a, b, &forbidden))
+                                .unwrap_or_else(|| !forbidden.segment_blocked(a, b, 0.))
                     })?;
                     ensure!(!flag.load(Ordering::Relaxed), "Podgląd anulowany");
                     let mut shape = Shape::default();
@@ -1546,22 +1626,43 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
         let lang = self.language;
         let mut launch = None;
         let mut close = false;
+        let mut water_launch = None;
         if let Some(d) = &mut self.shp_dialog {
-            egui::Window::new(lang.tr("Import dróg SHP")).collapsible(false).resizable(true).show(ctx,|ui|{
-            ui.label(lang.tr(&(d.path.display().to_string())));ui.label(lang.tr("PolyLine / PolyLineZ / PolyLineM. Każda część staje się osobną trasą."));
+            let title = if d.water.is_some() { "Import wody SHP" } else { "Import dróg SHP" };
+            egui::Window::new(lang.tr(title)).collapsible(false).resizable(true).show(ctx,|ui|{
+            ui.label(lang.tr(&(d.path.display().to_string())));
+            if d.water.is_some() {
+                ui.label(lang.tr("Polygon / PolygonZ / PolygonM: obszary wody. PolyLine / PolyLineZ / PolyLineM: rzeki."));
+            } else {
+                ui.label(lang.tr("PolyLine / PolyLineZ / PolyLineM. Każda część staje się osobną trasą."));
+            }
             ui.horizontal(|ui| {
                 if ui.button(lang.tr("Współrzędne świata")).clicked() { d.offset = [0., 0.]; }
                 if ui.button(lang.tr("Lokalne współrzędne mapy")).clicked() { d.offset = [self.doc.map.east, self.doc.map.north]; }
             });
             ui.horizontal(|ui|{ui.label(lang.tr("Przesunięcie E"));ui.add(egui::DragValue::new(&mut d.offset[0]).speed(10.));ui.label(lang.tr("N"));ui.add(egui::DragValue::new(&mut d.offset[1]).speed(10.));});
-            egui::ComboBox::from_label(lang.tr("Typ drogi dla importowanych tras")).selected_text(lang.tr(&d.family)).show_ui(ui,|ui|{for f in self.catalog.iter().map(|p|p.family.clone()).collect::<BTreeSet<_>>(){ui.selectable_value(&mut d.family,f.clone(),lang.tr(&(f)));}});
+            if let Some(width) = &mut d.water {
+                ui.horizontal(|ui|{ui.label(lang.tr("Szerokość rzek m"));ui.add(egui::DragValue::new(width).range(0.5..=2000.).speed(0.5));});
+            } else {
+                egui::ComboBox::from_label(lang.tr("Typ drogi dla importowanych tras")).selected_text(lang.tr(&d.family)).show_ui(ui,|ui|{for f in self.catalog.iter().map(|p|p.family.clone()).collect::<BTreeSet<_>>(){ui.selectable_value(&mut d.family,f.clone(),lang.tr(&(f)));}});
+            }
             ui.small(lang.tr("Dane muszą być w metrach i w układzie mapy. Brak automatycznej reprojekcji. Z/M oraz atrybuty DBF nie są importowane."));
             if let Some(prj)=&d.projection {ui.collapsing(lang.tr("Układ współrzędnych z PRJ"),|ui|{ui.label(lang.tr(prj));});}
             ui.horizontal(|ui| {
-                if ui.add_enabled(!d.family.is_empty() && self.jobs.is_empty(), egui::Button::new(lang.tr("Importuj trasy"))).clicked() { launch = Some((d.path.clone(), d.offset, d.family.clone())); }
+                if let Some(width) = d.water {
+                    if ui.add_enabled(self.jobs.is_empty(), egui::Button::new(lang.tr("Importuj wodę"))).clicked() { water_launch = Some((d.path.clone(), d.offset, width)); }
+                } else if ui.add_enabled(!d.family.is_empty() && self.jobs.is_empty(), egui::Button::new(lang.tr("Importuj trasy"))).clicked() { launch = Some((d.path.clone(), d.offset, d.family.clone())); }
                 if ui.button(lang.tr("Anuluj")).clicked() { close = true; }
             });
         });
+        }
+        if let Some((path, offset, width)) = water_launch {
+            self.shp_dialog = None;
+            self.start("Import wody SHP", move |cancel| {
+                let water = dayz_road_tool::shapefile::read_water(&path, offset, &cancel)?;
+                Ok(Loaded::Water(water.areas, water.lines, width))
+            });
+            return;
         }
         if let Some((path, offset, family)) = launch {
             self.shp_dialog = None;
@@ -1804,14 +1905,8 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
                 );
             }
         }
-        for poly in &self.doc.forbidden {
-            let pts: Vec<_> = poly.iter().map(|p| self.screen(*p, rect)).collect();
-            if pts.len() > 2 {
-                painter.add(egui::Shape::closed_line(
-                    pts,
-                    Stroke::new(2.0_f32, Color32::from_rgb(181, 77, 60)),
-                ));
-            }
+        if self.show_forbidden {
+            self.draw_forbidden(ui, &painter, rect, bounds);
         }
         let mut visible = BTreeSet::new();
         let bins = ((bounds[2] - bounds[0]) / 512. + 2.) * ((bounds[3] - bounds[1]) / 512. + 2.);
@@ -2096,6 +2191,145 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
                     INK,
                 );
             }
+        }
+    }
+    fn forbidden_controls(&mut self, ui: &mut egui::Ui) {
+        let lang = self.language;
+        ui.separator();
+        ui.strong(lang.tr("Woda"));
+        let terrain = self.terrain.is_some();
+        if ui
+            .add_enabled(
+                terrain,
+                egui::Checkbox::new(
+                    &mut self.doc.water.enabled,
+                    lang.tr("Omijaj teren poniżej poziomu wody"),
+                ),
+            )
+            .changed()
+        {
+            self.dirty = true;
+        }
+        ui.horizontal(|ui| {
+            ui.label(lang.tr("Poziom wody m"));
+            if ui
+                .add_enabled(
+                    terrain && self.doc.water.enabled,
+                    egui::DragValue::new(&mut self.doc.water.level)
+                        .range(-1000.0..=10000.)
+                        .speed(0.1),
+                )
+                .changed()
+            {
+                self.dirty = true;
+            }
+        });
+        if !terrain {
+            ui.small(lang.tr("Wczytaj ASC, aby wykrywać wodę z wysokości."));
+        }
+        if ui.button(lang.tr("Import wody SHP…")).clicked()
+            && let Some(path) = rfd::FileDialog::new()
+                .add_filter(lang.tr("Shapefile"), &["shp"])
+                .pick_file()
+        {
+            let projection = std::fs::read_to_string(path.with_extension("prj"))
+                .ok()
+                .map(|p| p.chars().take(4000).collect());
+            self.shp_dialog = Some(ShpDialog {
+                path,
+                offset: [0., 0.],
+                family: String::new(),
+                projection,
+                water: Some(10.),
+            });
+        }
+        ui.small(lang.tr(
+            "Polygon: jeziora i morze jako obszary zakazane. PolyLine: rzeki o podanej szerokości.",
+        ));
+        ui.checkbox(&mut self.show_forbidden, lang.tr("Pokaż obszary zakazane"));
+        ui.small(lang.tr(&format!(
+            "Obszary: {} · linie wody: {}",
+            self.doc.forbidden.len(),
+            self.doc.forbidden_lines.len()
+        )));
+        if (!self.doc.forbidden.is_empty() || !self.doc.forbidden_lines.is_empty())
+            && ui.button(lang.tr("Usuń wszystkie obszary zakazane")).clicked()
+        {
+            self.checkpoint();
+            self.doc.forbidden.clear();
+            self.doc.forbidden_lines.clear();
+        }
+    }
+    /// Forbidden areas, river corridors and (when enabled) terrain below the water level.
+    fn draw_forbidden(&mut self, ui: &egui::Ui, painter: &egui::Painter, rect: Rect, bounds: [f64; 4]) {
+        if self.doc.water.enabled
+            && let Some(t) = &self.terrain
+        {
+            use std::hash::{Hash, Hasher};
+            let m = &t.meta;
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            self.doc.water.level.to_bits().hash(&mut h);
+            self.terrain_dir.hash(&mut h);
+            [m.east, m.north, m.cell].map(f64::to_bits).hash(&mut h);
+            let key = h.finish();
+            if self.water_overlay.as_ref().is_none_or(|(k, _, _)| *k != key) {
+                let step = (m.cols.max(m.rows) as f64 / 2048.).ceil().max(1.) as usize;
+                let (w, hgt) = (m.cols.div_ceil(step), m.rows.div_ceil(step));
+                let mut pixels = vec![0u8; w * hgt * 4];
+                for y in 0..hgt {
+                    for x in 0..w {
+                        if t.value(x * step, y * step).is_some_and(|z| z < self.doc.water.level) {
+                            pixels[(y * w + x) * 4..][..4].copy_from_slice(&[40, 120, 230, 110]);
+                        }
+                    }
+                }
+                let image = egui::ColorImage::from_rgba_unmultiplied([w, hgt], &pixels);
+                let texture = ui.ctx().load_texture("water-overlay", image, egui::TextureOptions::NEAREST);
+                let extent = [
+                    m.east,
+                    m.north,
+                    m.east + m.cols as f64 * m.cell,
+                    m.north + m.rows as f64 * m.cell,
+                ];
+                self.water_overlay = Some((key, texture, extent));
+            }
+            if let Some((_, texture, e)) = &self.water_overlay {
+                painter.image(
+                    texture.id(),
+                    Rect::from_two_pos(self.screen([e[0], e[3]], rect), self.screen([e[2], e[1]], rect)),
+                    Rect::from_min_max(egui::pos2(0., 0.), egui::pos2(1., 1.)),
+                    Color32::WHITE,
+                );
+            }
+        }
+        let outside = |pts: &[Point]| {
+            let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
+            for p in pts {
+                lo = [lo[0].min(p[0]), lo[1].min(p[1])];
+                hi = [hi[0].max(p[0]), hi[1].max(p[1])];
+            }
+            hi[0] < bounds[0] || lo[0] > bounds[2] || hi[1] < bounds[1] || lo[1] > bounds[3]
+        };
+        for poly in &self.doc.forbidden {
+            if poly.len() < 3 || outside(poly) {
+                continue;
+            }
+            let pts: Vec<_> = poly.iter().map(|p| self.screen(*p, rect)).collect();
+            painter.add(egui::Shape::closed_line(
+                pts,
+                Stroke::new(2.0_f32, Color32::from_rgb(181, 77, 60)),
+            ));
+        }
+        for line in &self.doc.forbidden_lines {
+            if outside(&line.points) {
+                continue;
+            }
+            let pts: Vec<_> = line.points.iter().map(|p| self.screen(*p, rect)).collect();
+            let width = ((line.width * self.scale) as f32).max(2.);
+            painter.add(egui::Shape::line(
+                pts,
+                Stroke::new(width, Color32::from_rgba_unmultiplied(40, 120, 230, 150)),
+            ));
         }
     }
     fn draw_satellite(&mut self, ui: &egui::Ui, rect: Rect, bounds: [f64; 4]) {
@@ -2409,6 +2643,65 @@ mod tests {
         assert!(app.doc.routes.is_empty());
         app.undo(true);
         assert_eq!(app.doc.routes.len(), 1);
+    }
+
+    #[test]
+    fn water_import_is_forbidden_undoable_and_shown_under_the_forbidden_tool() {
+        let mut app = App::new();
+        app.set_language(dayz_road_tool::i18n::Language::English);
+        app.show_forbidden = false;
+        let (tx, rx) = mpsc::channel();
+        let lake = vec![[200000., 0.], [200100., 0.], [200100., 100.]];
+        let river = vec![[200000., 200.], [200300., 260.]];
+        tx.send(Ok(Loaded::Water(vec![lake.clone()], vec![river.clone()], 12.)))
+            .unwrap();
+        app.jobs.push(Job {
+            rx,
+            cancel: Arc::new(AtomicBool::new(false)),
+            label: "Import wody SHP".into(),
+        });
+        app.tick(&egui::Context::default());
+        assert_eq!(app.doc.forbidden, vec![lake]);
+        assert_eq!(app.doc.forbidden_lines, vec![ForbiddenLine { points: river, width: 12. }]);
+        // Imported water is shown, also if forbidden areas were hidden before.
+        assert!(app.show_forbidden);
+        app.undo(false);
+        assert!(app.doc.forbidden.is_empty() && app.doc.forbidden_lines.is_empty());
+        app.undo(true);
+        assert_eq!(app.doc.forbidden_lines.len(), 1);
+        // The obstacle key follows the water settings, so jobs rebuild the raster.
+        let before = app.obstacle_input().key;
+        app.doc.water = WaterSettings { enabled: true, level: 2. };
+        assert_ne!(app.obstacle_input().key, before);
+
+        app.tool = Tool::Forbidden;
+        let ctx = egui::Context::default();
+        let output = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(1440., 920.))),
+                ..Default::default()
+            },
+            |ctx| app.show(ctx),
+        );
+        let mut found = Vec::new();
+        fn texts(shape: &egui::epaint::Shape, found: &mut Vec<String>) {
+            match shape {
+                egui::epaint::Shape::Text(t) => found.push(t.galley.job.text.clone()),
+                egui::epaint::Shape::Vec(v) => v.iter().for_each(|s| texts(s, found)),
+                _ => {}
+            }
+        }
+        output.shapes.iter().for_each(|s| texts(&s.shape, &mut found));
+        for label in [
+            "Water",
+            "Water level m",
+            "Import water SHP…",
+            "Show forbidden areas",
+            "Remove all forbidden areas",
+            "Areas: 1 · water lines: 1",
+        ] {
+            assert!(found.iter().any(|t| t == label), "missing {label}");
+        }
     }
 
     #[test]

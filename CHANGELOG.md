@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.4.0 — 2026-11-06
+
+### Added
+- Water section under the **Forbidden** tool: terrain below a configurable water level (0 m by default) counts as forbidden, so terrain routing avoids the sea without drawing it.
+- **Import water SHP…**: Polygon / PolygonZ / PolygonM rings become forbidden areas and PolyLine / PolyLineZ / PolyLineM parts become rivers of a chosen width. The import is undone as one step and saved in `.dzroad` projects; older projects load without water.
+- **Show forbidden areas** toggle (also in the layer list): water below the level in blue, rivers as bands at their width, forbidden areas as red outlines. **Remove all forbidden areas** clears drawn and imported areas.
+
+### Changed
+- Forbidden areas, rivers and water are rasterised once over the ASC with a distance map, so routing stays fast with long rivers of many vertices. Terrain routes keep at least the route tolerance from every obstacle.
+- Live drawing, **Fit models to points** and the TV4P export check apply the same forbidden areas and water as terrain routing.
+
 ## 2.3.0 — 2026-11-06
 
 ### Changed
