@@ -4,6 +4,7 @@ mod i18n;
 mod render;
 mod shell;
 mod tv4p;
+mod update;
 use anyhow::{Result, bail};
 use i18n::Language;
 use std::path::{Path, PathBuf};

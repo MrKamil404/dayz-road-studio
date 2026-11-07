@@ -42,6 +42,8 @@ pub struct Model {
     pub line: Vec<Point>,
     pub length: f64,
     pub source: String,
+    /// The P3D file the model was read from, for the 3D view.
+    pub file: Option<std::path::PathBuf>,
 }
 
 struct Reader<'a> {
@@ -229,6 +231,7 @@ fn parse_mlod(bytes: &[u8]) -> Result<Model> {
         bail!("Missing LB/PB/LE/PE connection selections")
     }
     Ok(Model {
+        file: None,
         triangles,
         ports,
         line,
@@ -441,6 +444,7 @@ pub fn filename_model(name: &str) -> Result<Model> {
     }
     let end = *line.last().unwrap();
     Ok(Model {
+        file: None,
         triangles,
         ports: [
             Some(Port {
@@ -490,10 +494,31 @@ impl Library {
             configured
         };
         let model = if path.exists() {
-            read_mlod(&path)?
+            match read_mlod(&path) {
+                // Binarised track models are measured from their ODOL data.
+                Err(e) if e.root_cause().is::<NonMlod>() => {
+                    let bytes = fs::read(&path)?;
+                    match crate::rails::track_model(&bytes) {
+                        Ok(model) => model,
+                        // Other railway objects (crossing decks) only need a footprint.
+                        Err(t) if t.is::<crate::rails::NotTrack>() => {
+                            if !key.starts_with("rail_") {
+                                return Err(e);
+                            }
+                            crate::rails::object_model(&bytes)?
+                        }
+                        Err(t) => return Err(t.context(format!("Nieprawidłowy model toru {}", path.display()))),
+                    }
+                }
+                result => result?,
+            }
         } else {
             filename_model(name)?
         };
+        let mut model = model;
+        if model.file.is_none() && path.exists() {
+            model.file = Some(path);
+        }
         self.cache.insert(key, model.clone());
         Ok(model)
     }
@@ -507,10 +532,16 @@ pub struct Shape {
     pub filename_parts: usize,
     pub warnings: Vec<String>,
     pub non_mlod_models: Vec<String>,
+    /// Where each part with a known P3D file was put: file, rotation, translation.
+    #[serde(skip)]
+    pub placements: Vec<(std::path::PathBuf, f64, Point)>,
 }
 impl Shape {
     pub fn place(&mut self, m: &Model, angle: f64, translation: Point) -> [Option<Port>; 4] {
         let tr = |p| add(rotate(p, angle), translation);
+        if let Some(file) = &m.file {
+            self.placements.push((file.clone(), angle, translation));
+        }
         self.triangles.extend(m.triangles.iter().map(|t| t.map(tr)));
         if !m.line.is_empty() {
             self.lines.push(m.line.iter().copied().map(tr).collect())

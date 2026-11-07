@@ -1691,11 +1691,26 @@
     "pl": "Przywróć domyślny kolor tego typu",
     "en": "Restore the default color for this type"
   },
-{"en":"Edit points","pl":"Edytuj punkty"},
-{"en":"Drag a point to reshape the route. Double-click the line to add a point; double-right-click a point to remove it. Fit models again after editing.","pl":"Przeciągnij punkt, aby zmienić trasę. Podwójny klik na linii dodaje punkt; podwójny prawy klik na punkcie usuwa go. Po edycji dopasuj modele ponownie."},
-{"en":"Blending width on each side [m]","pl":"Szerokość wygładzania z każdej strony [m]"},
-{"en":"Smooth road profile with a gradual transition to surrounding terrain. Width is measured from segment edges; 0 m changes only the MLOD footprint.","pl":"Płynny profil pod drogą i łagodne przejście do otaczającego terenu. Szerokość liczona od krawędzi partów; 0 m zmienia tylko obrys MLOD."},
-{"en":"Invalid terrain blending width","pl":"Nieprawidłowa szerokość wygładzania terenu"},
+  {
+    "en": "Edit points",
+    "pl": "Edytuj punkty"
+  },
+  {
+    "en": "Drag a point to reshape the route. Double-click the line to add a point; double-right-click a point to remove it. Fit models again after editing.",
+    "pl": "Przeciągnij punkt, aby zmienić trasę. Podwójny klik na linii dodaje punkt; podwójny prawy klik na punkcie usuwa go. Po edycji dopasuj modele ponownie."
+  },
+  {
+    "en": "Blending width on each side [m]",
+    "pl": "Szerokość wygładzania z każdej strony [m]"
+  },
+  {
+    "en": "Smooth road profile with a gradual transition to surrounding terrain. Width is measured from segment edges; 0 m changes only the MLOD footprint.",
+    "pl": "Płynny profil pod drogą i łagodne przejście do otaczającego terenu. Szerokość liczona od krawędzi partów; 0 m zmienia tylko obrys MLOD."
+  },
+  {
+    "en": "Invalid terrain blending width",
+    "pl": "Nieprawidłowa szerokość wygładzania terenu"
+  },
   {
     "pl": "Zaimportowano wodę: {0} obszarów i {1} linii. Wyznaczanie trasy je omija.",
     "en": "Imported water: {0} areas and {1} lines. Terrain routing avoids them."
@@ -1771,5 +1786,357 @@
   {
     "pl": "Obszary: {0} · linie wody: {1}",
     "en": "Areas: {0} · water lines: {1}"
+  },
+  {
+    "pl": "Odczyt modeli torów",
+    "en": "Reading track models"
+  },
+  {
+    "pl": "Wczytano {0} modeli torów: {1}",
+    "en": "Loaded {0} track models: {1}"
+  },
+  {
+    "pl": "Zapisano {0} obiektów torów do {1}. Zaimportuj plik w Terrain Builder (Import objects).",
+    "en": "Saved {0} track objects to {1}. Import the file in Terrain Builder (Import objects)."
+  },
+  {
+    "pl": "Ograniczenia torowiska",
+    "en": "Track constraints"
+  },
+  {
+    "pl": "Dotyczy tras typu Rail_Track*. Łuk 10° / 25 m ma promień ok. 143 m; dla Rail_TrackSmall zmniejsz promień min. do ok. 20 m.",
+    "en": "Applies to Rail_Track* routes. The 10° / 25 m curve has a radius of about 143 m; for Rail_TrackSmall reduce the min. radius to about 20 m."
+  },
+  {
+    "pl": "Eksport torów TB…",
+    "en": "Export tracks TB…"
+  },
+  {
+    "pl": "Torowiska jako obiekty do importu w Terrain Builder (File › Import › Objects)",
+    "en": "Tracks as objects to import in Terrain Builder (File › Import › Objects)"
+  },
+  {
+    "pl": "Brak torowisk do eksportu",
+    "en": "No tracks to export"
+  },
+  {
+    "pl": "Dopasuj modele do wszystkich torowisk przed eksportem",
+    "en": "Fit models to all tracks before exporting"
+  },
+  {
+    "pl": "Obiekty Terrain Builder",
+    "en": "Terrain Builder objects"
+  },
+  {
+    "pl": "Eksport torów",
+    "en": "Track export"
+  },
+  {
+    "pl": "Torowisko {0} przecina obszar zakazany lub nie spełnia ograniczeń ASC",
+    "en": "Track {0} crosses a forbidden area or does not meet the ASC constraints"
+  },
+  {
+    "pl": "Modele torów…",
+    "en": "Track models…"
+  },
+  {
+    "pl": "Folder z modelami Rail_Track*.p3d (domyślnie P:\\dz\\structures\\rail\\Tracks)",
+    "en": "Folder with Rail_Track*.p3d models (default P:\\dz\\structures\\rail\\Tracks)"
+  },
+  {
+    "pl": "Model ODOL nie jest torem (brak punktów map1/map2)",
+    "en": "The ODOL model is not a track (no map1/map2 points)"
+  },
+  {
+    "pl": "Model toru nie ma LOD wizualnego",
+    "en": "The track model has no visual LOD"
+  },
+  {
+    "pl": "Końce toru map1/map2 są za blisko siebie",
+    "en": "The map1/map2 track ends are too close together"
+  },
+  {
+    "pl": "Nie rozpoznano szyn w modelu toru",
+    "en": "No rails were recognised in the track model"
+  },
+  {
+    "pl": "Nie można wyznaczyć osi toru",
+    "en": "Cannot determine the track centre line"
+  },
+  {
+    "pl": "Nie można odczytać folderu torów {0}",
+    "en": "Cannot read the track folder {0}"
+  },
+  {
+    "pl": "{0}: brak końców toru",
+    "en": "{0}: no track ends"
+  },
+  {
+    "pl": "W folderze nie ma modeli torów Rail_Track*",
+    "en": "The folder contains no Rail_Track* track models"
+  },
+  {
+    "pl": "Torowisko {0} nie ma dopasowanych segmentów",
+    "en": "Track {0} has no fitted segments"
+  },
+  {
+    "pl": "Brak nazwy modelu toru",
+    "en": "Missing track model name"
+  },
+  {
+    "pl": "Nieprawidłowa pozycja toru",
+    "en": "Invalid track position"
+  },
+  {
+    "pl": "Nieprawidłowy model toru {0}",
+    "en": "Invalid track model {0}"
+  },
+  {
+    "pl": "Rozmiar ODOL",
+    "en": "ODOL size"
+  },
+  {
+    "pl": "Niepełny plik ODOL",
+    "en": "Truncated ODOL file"
+  },
+  {
+    "pl": "Nieprawidłowa liczba elementów ODOL",
+    "en": "Invalid ODOL element count"
+  },
+  {
+    "pl": "Niezakończony napis ODOL",
+    "en": "Unterminated ODOL string"
+  },
+  {
+    "pl": "Uszkodzone dane LZO",
+    "en": "Corrupt LZO data"
+  },
+  {
+    "pl": "Puste dane LZO",
+    "en": "Empty LZO data"
+  },
+  {
+    "pl": "Rozmiar danych LZO nie zgadza się z ODOL",
+    "en": "The LZO data size does not match the ODOL model"
+  },
+  {
+    "pl": "To nie jest model ODOL",
+    "en": "This is not an ODOL model"
+  },
+  {
+    "pl": "Nieobsługiwana wersja ODOL {0}",
+    "en": "Unsupported ODOL version {0}"
+  },
+  {
+    "pl": "Nieprawidłowa liczba LOD w ODOL",
+    "en": "Invalid ODOL LOD count"
+  },
+  {
+    "pl": "Nie znaleziono tabeli LOD w ODOL",
+    "en": "LOD table not found in the ODOL model"
+  },
+  {
+    "pl": "LOD {0} modelu ODOL",
+    "en": "ODOL model LOD {0}"
+  },
+  {
+    "pl": "Torowisko {0}",
+    "en": "Track {0}"
+  },
+  {
+    "pl": "Model ODOL nie ma LOD",
+    "en": "The ODOL model has no LOD"
+  },
+  {
+    "pl": "Model ODOL nie ma wierzchołków",
+    "en": "The ODOL model has no vertices"
+  },
+  {
+    "pl": "Tor przecina drogę na łuku, pod kątem mniejszym niż {0}° lub bez miejsca na przejazd przy ({1}, {2})",
+    "en": "The track crosses a road on a curve, at less than {0}° or without room for a level crossing near ({1}, {2})"
+  },
+  {
+    "pl": "Brak modeli przejazdu kolejowego dla tego typu toru",
+    "en": "No level-crossing models for this track type"
+  },
+  {
+    "pl": "Wykop maks. m",
+    "en": "Max. cut m"
+  },
+  {
+    "pl": "Nasyp maks. m",
+    "en": "Max. fill m"
+  },
+  {
+    "pl": "Kara za roboty ziemne",
+    "en": "Earthwork penalty"
+  },
+  {
+    "pl": "Nachylenie skarp 1:",
+    "en": "Side slope 1:"
+  },
+  {
+    "pl": "Metry w poziomie na 1 m wysokości nasypu lub głębokości wykopu",
+    "en": "Horizontal metres per 1 m of fill height or cut depth"
+  },
+  {
+    "pl": "Dopasuj ASC pod wybraną trasą",
+    "en": "Grade ASC under the selected route"
+  },
+  {
+    "pl": "Niweleta drogi lub toru w granicach spadku maks. oraz wykopu i nasypu maks. z ograniczeń trasy; poza obrysem skarpy nasypów i wykopów. Wygładzanie łagodzi pobocza.",
+    "en": "Road or track profile within the route's max. grade and max. cut and fill; beyond the footprint, embankment and cut slopes. Smoothing softens the shoulders."
+  },
+  {
+    "pl": "Zmieniono {0} komórek ASC pod trasą (nasyp do {1} m, wykop do {2} m). Ctrl+Z cofa operację. Zapisz wynik przyciskiem Eksport ASC.",
+    "en": "Changed {0} ASC cells under the route (fill up to {1} m, cut up to {2} m). Ctrl+Z undoes it. Save the result with Export ASC."
+  },
+  {
+    "pl": "Nieprawidłowe nachylenie skarp",
+    "en": "Invalid side slope"
+  },
+  {
+    "pl": "Brak profilu drogi",
+    "en": "No road profile"
+  },
+  {
+    "pl": "Brak przebiegu trasy",
+    "en": "No route centre line"
+  },
+  {
+    "pl": "Brak wysokości ASC pod trasą",
+    "en": "No ASC height under the route"
+  },
+  {
+    "pl": "Nie da się poprowadzić niwelety w granicach wykopu i nasypu: brakuje {0} m. Zwiększ wykop lub nasyp maks. albo spadek maks.",
+    "en": "No profile fits within the cut and fill limits: {0} m short. Increase the max. cut or fill or the max. grade."
+  },
+  {
+    "pl": "Nieprawidłowe ustawienia robót ziemnych",
+    "en": "Invalid earthwork settings"
+  },
+  {
+    "pl": "Widok mapy z góry",
+    "en": "Top-down map view"
+  },
+  {
+    "pl": "Widok terenu 3D z satelitą, wodą, drogami i torami",
+    "en": "3D terrain view with satellite, water, roads and tracks"
+  },
+  {
+    "pl": "Wczytaj teren ASC lub satelitę, aby zobaczyć widok 3D.",
+    "en": "Load ASC terrain or a satellite image to see the 3D view."
+  },
+  {
+    "pl": "Bez satelity teren jest kolorowany według wysokości",
+    "en": "Without the satellite the terrain is coloured by elevation"
+  },
+  {
+    "pl": "Przewyższenie",
+    "en": "Vertical exaggeration"
+  },
+  {
+    "pl": "Wysokości {0}–{1} m · siatka {2} m",
+    "en": "Elevations {0}–{1} m · grid {2} m"
+  },
+  {
+    "pl": "Resetuj kamerę",
+    "en": "Reset camera"
+  },
+  {
+    "pl": "LPM: obrót · PPM: przesuwanie · kółko: przybliżenie",
+    "en": "Left drag: orbit · right drag: pan · wheel: zoom"
+  },
+  {
+    "pl": "Widok 3D",
+    "en": "3D view"
+  },
+  {
+    "pl": "Woda (poziom {0} m)",
+    "en": "Water (level {0} m)"
+  },
+  {
+    "pl": "Drogi i tory",
+    "en": "Roads and tracks"
+  },
+  {
+    "pl": "Budowanie widoku 3D…",
+    "en": "Building the 3D view…"
+  },
+  {
+    "pl": "Widok 3D wymaga OpenGL 3.0 lub nowszego",
+    "en": "The 3D view needs OpenGL 3.0 or newer"
+  },
+  {
+    "pl": "Modele P3D",
+    "en": "P3D models"
+  },
+  {
+    "pl": "Modele dróg i torów z P3D z teksturami; bez nich same obrysy",
+    "en": "Textured road and track models from P3D; without them only footprints"
+  },
+  {
+    "pl": "Wysokości {0}–{1} m · kafle terenu: {2}",
+    "en": "Elevations {0}–{1} m · terrain tiles: {2}"
+  },
+  {
+    "pl": "Modele: {0} części, bez modelu: {1}",
+    "en": "Models: {0} parts, without a model: {1}"
+  },
+  {
+    "pl": "Nieoczekiwany koniec pliku P3D",
+    "en": "Unexpected end of P3D file"
+  },
+  {
+    "pl": "Niezakończony napis w P3D",
+    "en": "Unterminated string in P3D"
+  },
+  {
+    "pl": "Nieobsługiwany MLOD",
+    "en": "Unsupported MLOD"
+  },
+  {
+    "pl": "Za dużo LOD w MLOD",
+    "en": "Too many LODs in MLOD"
+  },
+  {
+    "pl": "Brak TAGG w MLOD",
+    "en": "Missing TAGG in MLOD"
+  },
+  {
+    "pl": "Brak widocznego LOD w MLOD",
+    "en": "No visual LOD in MLOD"
+  },
+  {
+    "pl": "Brak LOD w ODOL",
+    "en": "No LOD in ODOL"
+  },
+  {
+    "pl": "Niezgodna liczba UV w ODOL",
+    "en": "Mismatched UV count in ODOL"
+  },
+  {
+    "pl": "Nieznany format P3D {0}",
+    "en": "Unknown P3D format {0}"
+  },
+  {
+    "pl": "Plik PAA jest za krótki",
+    "en": "PAA file is too short"
+  },
+  {
+    "pl": "Uszkodzony mipmap PAA",
+    "en": "Damaged PAA mipmap"
+  },
+  {
+    "pl": "Brak mipmap w PAA",
+    "en": "No mipmaps in PAA"
+  },
+  {
+    "pl": "Nieobsługiwany format PAA {0}",
+    "en": "Unsupported PAA format {0}"
+  },
+  {
+    "pl": "Nieobsługiwana kompresja PAA",
+    "en": "Unsupported PAA compression"
   }
 ]

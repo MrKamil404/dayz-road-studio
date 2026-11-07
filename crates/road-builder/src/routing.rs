@@ -1,6 +1,6 @@
 use crate::{
     document::{ForbiddenLine, RoutingSettings, WaterSettings},
-    geometry::{Point, norm, sub},
+    geometry::{Point, mul, norm, sub},
     terrain::Terrain,
 };
 use anyhow::{Result, bail, ensure};
@@ -355,18 +355,33 @@ impl Obstacles {
             })
     }
 }
-/// Check a polyline against obstacles (kept `clearance` metres away), NODATA and
-/// the maximum grade between terrain samples. Returns the total climb `Σ|Δz|`.
-fn profile(
+/// Road along a polyline: the interval of road heights it can have at the end, its climb
+/// and the earthwork area (|road − terrain| × length) it needs.
+#[derive(Clone, Copy, Debug)]
+struct Band {
+    climb: f64,
+    earth: f64,
+    lo: f64,
+    hi: f64,
+}
+/// Check a polyline against obstacles (kept `clearance` metres away), NODATA and the
+/// maximum grade. The road may lie up to `max_cut` below and `max_fill` above the terrain
+/// (embankments and cuts), so the grade is checked on reachable road heights, propagated
+/// from `start` (the parent's interval) or from the terrain band at the first point. With
+/// no cut or fill this is the grade between terrain samples.
+fn profile_band(
     line: &[Point],
     terrain: &Terrain,
     settings: &RoutingSettings,
     obstacles: &Obstacles,
     clearance: f64,
-) -> Option<f64> {
+    start: Option<(f64, f64)>,
+) -> Option<Band> {
     let spacing = (terrain.meta.cell / 2.).clamp(0.1, 5.);
-    let mut climb = 0.;
-    let mut last: Option<f64> = None;
+    let g = (settings.max_grade + 1e-6) / 100.;
+    let mut interval = start;
+    let (mut climb, mut earth) = (0., 0.);
+    let mut road: Option<f64> = None;
     for (index, w) in line.windows(2).enumerate() {
         let (a, b) = (w[0], w[1]);
         if obstacles.segment_blocked(a, b, clearance) {
@@ -378,18 +393,36 @@ fn profile(
             let f = i as f64 / steps as f64;
             let p = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
             let z = terrain.sample(p)?;
-            if let Some(old) = last
-                && dist > 1e-8
-            {
-                if (z - old).abs() / (dist / steps as f64) * 100. > settings.max_grade + 1e-6 {
-                    return None;
-                }
-                climb += (z - old).abs();
+            let ds = if road.is_some() { dist / steps as f64 } else { 0. };
+            let (band_lo, band_hi) = (z - settings.max_cut, z + settings.max_fill);
+            let (lo, hi) = match interval {
+                None => (band_lo, band_hi),
+                Some((lo, hi)) => ((lo - g * ds).max(band_lo), (hi + g * ds).min(band_hi)),
+            };
+            if lo > hi + 1e-9 {
+                return None;
             }
-            last = Some(z);
+            let h = z.clamp(lo, hi.max(lo));
+            if let Some(r) = road {
+                climb += (h - r).abs();
+            }
+            earth += (h - z).abs() * ds;
+            road = Some(h);
+            interval = Some((lo, hi.max(lo)));
         }
     }
-    Some(climb)
+    let (lo, hi) = interval?;
+    Some(Band { climb, earth, lo, hi })
+}
+/// [`profile_band`] from the terrain band; the climb of the road.
+fn profile(
+    line: &[Point],
+    terrain: &Terrain,
+    settings: &RoutingSettings,
+    obstacles: &Obstacles,
+    clearance: f64,
+) -> Option<f64> {
+    profile_band(line, terrain, settings, obstacles, clearance, None).map(|b| b.climb)
 }
 pub fn permitted(
     a: Point,
@@ -434,6 +467,8 @@ struct State {
     length: f64,
     /// Which route arriving at the leg's start this state continues.
     origin: usize,
+    /// Reachable road heights here (embankments and cuts); `None` at a free start.
+    band: Option<(f64, f64)>,
 }
 /// Sample a circular arc (a straight line when `delta` is zero) starting at `p`.
 fn arc(p: Point, heading: f64, delta: f64, length: f64) -> Vec<Point> {
@@ -544,9 +579,11 @@ impl CostField {
                     let next = ny as usize * cols + nx as usize;
                     let (a, b) = (center(index), center(next));
                     if let Some(climb) = profile(&[b, a], terrain, &relaxed, forbidden, clearance) {
-                        let ng = g
-                            + norm(sub(b, a)).max(climb / (s.max_grade / 100.))
-                            + s.slope_weight * climb;
+                        let ng = g + if s.max_cut + s.max_fill > 0. {
+                            norm(sub(b, a))
+                        } else {
+                            norm(sub(b, a)).max(climb / (s.max_grade / 100.)) + s.slope_weight * climb
+                        };
                         if ng < cost[next] {
                             cost[next] = ng;
                             heap.push(Node { cost: ng, index: next });
@@ -574,9 +611,365 @@ impl CostField {
     }
 }
 
+/// A track piece as a motion step, in the frame of its entry (x forward, y left).
+struct Piece<'a> {
+    item: &'a crate::roads::CatalogPart,
+    reverse: bool,
+    exit: Point,
+    turn: f64,
+    line: Vec<Point>,
+}
+fn pieces<'a>(
+    catalog: &'a [crate::roads::CatalogPart],
+    family: &str,
+    min_radius: f64,
+) -> Vec<Piece<'a>> {
+    let mut out = Vec::new();
+    for item in catalog.iter().filter(|m| m.family == family && [3, 4].contains(&m.category)) {
+        let m = &item.model;
+        let (Some(a), Some(b)) = (m.ports[0], m.ports[1]) else { continue };
+        if m.ports[2].is_some() || m.line.len() < 2 {
+            continue;
+        }
+        for reverse in [false, true] {
+            if reverse && item.category != 4 {
+                continue;
+            }
+            let (entry, exit) = if reverse { (b, a) } else { (a, b) };
+            let f = mul(entry.outward, -1. / norm(entry.outward).max(1e-12));
+            let l = [-f[1], f[0]];
+            let local = |p: Point| {
+                let d = sub(p, entry.p);
+                [d[0] * f[0] + d[1] * f[1], d[0] * l[0] + d[1] * l[1]]
+            };
+            let turn = (exit.outward[0] * l[0] + exit.outward[1] * l[1])
+                .atan2(exit.outward[0] * f[0] + exit.outward[1] * f[1]);
+            if turn.abs() > 1e-5 && m.length / turn.abs() < min_radius - 1e-6 {
+                continue;
+            }
+            let mut line: Vec<Point> = m.line.iter().map(|p| local(*p)).collect();
+            if reverse {
+                line.reverse();
+            }
+            out.push(Piece { item, reverse, exit: local(exit.p), turn, line });
+        }
+    }
+    out
+}
+fn pose(p: Point, heading: f64, local: Point) -> Point {
+    let (c, s) = (heading.cos(), heading.sin());
+    [p[0] + local[0] * c - local[1] * s, p[1] + local[0] * s + local[1] * c]
+}
+#[derive(Clone, Copy)]
+struct TrackState {
+    p: Point,
+    heading: f64,
+    g: f64,
+    parent: usize,
+    piece: usize,
+    origin: usize,
+    band: Option<(f64, f64)>,
+}
+struct TrackStart {
+    p: Point,
+    heading: f64,
+    g: f64,
+    origin: usize,
+    band: Option<(f64, f64)>,
+}
+struct TrackArrival {
+    p: Point,
+    heading: f64,
+    g: f64,
+    origin: usize,
+    band: Option<(f64, f64)>,
+    steps: Vec<(usize, Point, f64)>,
+}
+
+/// Railway route built directly from track pieces: hybrid A* whose steps are the real
+/// pieces, so the result is continuous by construction and every piece is checked against
+/// the slope, NODATA and the obstacles (kept `tolerance` away). Each point is reached to
+/// within `tolerance` (the last one to within half the shortest piece more), with the
+/// heading carried on into the next leg.
+#[allow(clippy::too_many_arguments)]
+pub fn plan_track(
+    terrain: &Terrain,
+    waypoints: &[Point],
+    family: &str,
+    catalog: &[crate::roads::CatalogPart],
+    s: &RoutingSettings,
+    forbidden: &Obstacles,
+    crossings: &crate::rails::Crossings,
+    cancel: &AtomicBool,
+) -> Result<Planned> {
+    ensure!(waypoints.len() >= 2, "Wskaż przynajmniej dwa punkty");
+    ensure!(
+        [s.cell, s.max_grade, s.slope_weight, s.min_radius, s.tolerance]
+            .iter()
+            .all(|v| v.is_finite())
+            && s.max_grade > 0.
+            && s.slope_weight >= 0.
+            && s.min_radius > 0.
+            && s.tolerance > 0.,
+        "Nieprawidłowe ustawienia automatu"
+    );
+    let all = pieces(catalog, family, s.min_radius);
+    ensure!(!all.is_empty(), "Brak prostych i zakrętów MLOD dla tej rodziny");
+    for w in waypoints {
+        ensure!(terrain.sample(*w).is_some(), "Punkty poza ASC lub w NODATA");
+        ensure!(
+            profile(&[*w, *w], terrain, s, forbidden, s.tolerance).is_some(),
+            "Punkt trasy leży w obszarze zakazanym lub bliżej niego niż tolerancja trasy"
+        );
+    }
+    let field = CostField::new(terrain, waypoints, s, forbidden, s.tolerance, cancel)?;
+    let shortest = all.iter().map(|p| p.item.model.length).fold(f64::INFINITY, f64::min);
+    let mut routes: Vec<Vec<(usize, Point, f64)>> = vec![vec![]];
+    let mut starts: Vec<TrackStart> = Vec::new();
+    for stage in 0..waypoints.len() - 1 {
+        let last = stage + 2 == waypoints.len();
+        let reach = s.tolerance + if last { shortest / 2. } else { 0. };
+        let mut arrivals = None;
+        let mut closest = f64::INFINITY;
+        let mut exhausted = false;
+        for (weight, budget) in [(1., 300_000), (1.5, 700_000), (3., 1_200_000)] {
+            match track_leg(
+                terrain, waypoints, stage, &starts, s, forbidden, crossings, &field, &all, reach,
+                last, weight, budget, cancel,
+            )? {
+                Ok(a) => {
+                    arrivals = Some(a);
+                    break;
+                }
+                Err((ran_out, near)) => {
+                    closest = closest.min(near);
+                    exhausted = ran_out;
+                    if !ran_out {
+                        break;
+                    }
+                }
+            }
+        }
+        let Some(arrivals) = arrivals else {
+            if exhausted {
+                bail!(
+                    "Przekroczono budżet wyszukiwania. Do punktu {} dojechano najbliżej na {:.0} m. Zwiększ krok, złagodź ograniczenia lub dodaj punkty pośrednie",
+                    stage + 2,
+                    closest
+                );
+            }
+            bail!(
+                "Nie znaleziono trasy spełniającej ograniczenia. Do punktu {} dojechano najbliżej na {:.0} m. Zwiększ spadek maks., zmniejsz promień min. lub krok automatu",
+                stage + 2,
+                closest
+            );
+        };
+        starts = arrivals
+            .iter()
+            .enumerate()
+            .map(|(i, a)| TrackStart { p: a.p, heading: a.heading, g: a.g, origin: i, band: a.band })
+            .collect();
+        routes = arrivals
+            .into_iter()
+            .map(|a| {
+                let mut r = routes[a.origin].clone();
+                r.extend(a.steps);
+                r
+            })
+            .collect();
+    }
+    let steps = routes.swap_remove(0);
+    let mut parts = Vec::with_capacity(steps.len());
+    for (piece, p, heading) in steps {
+        let piece = &all[piece];
+        let at = crate::geometry::Port { p, outward: [heading.cos(), heading.sin()] };
+        parts.push(crate::roads::place(piece.item, at, piece.reverse)?);
+    }
+    let mut parts = crate::roads::merge_straight_runs(parts, catalog, family, |item, line| {
+        !cancel.load(AO::Relaxed)
+            && line.windows(2).all(|w| permitted(w[0], w[1], terrain, s, forbidden))
+            && crossings.allows(item, line, s.tolerance)
+    })?;
+    let extras = crossings.apply(&mut parts, catalog)?;
+    Ok(Planned { parts, extras })
+}
+
+/// One leg of [`plan_track`]; `Err((budget ran out, closest approach))` when nothing is found.
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn track_leg(
+    terrain: &Terrain,
+    waypoints: &[Point],
+    stage: usize,
+    starts: &[TrackStart],
+    s: &RoutingSettings,
+    forbidden: &Obstacles,
+    crossings: &crate::rails::Crossings,
+    field: &CostField,
+    all: &[Piece],
+    reach: f64,
+    last: bool,
+    weight: f64,
+    budget: usize,
+    cancel: &AtomicBool,
+) -> Result<std::result::Result<Vec<TrackArrival>, (bool, f64)>> {
+    let target = waypoints[stage + 1];
+    let target_z = terrain.sample(target).unwrap_or(0.);
+    let long = all.iter().map(|p| p.item.model.length).fold(0., f64::max);
+    // Pieces shorter than 8 m only near the target, or every cell fills with tiny steps.
+    let short = |p: &Piece| p.item.model.length < 8. && long >= 8.;
+    let heuristic = |p: Point| {
+        let dz = ((target_z - terrain.sample(p).unwrap_or(target_z)).abs() - s.max_cut - s.max_fill).max(0.);
+        let analytic = norm(sub(target, p)).max(dz / (s.max_grade / 100.)) + s.slope_weight * dz;
+        analytic.max(field.estimate(stage, p))
+    };
+    // Cells a quarter of the longest straight: fine enough to tell routes apart, coarse
+    // enough that obstacles such as roads do not flood the search with near-equal states.
+    let resolution = (all
+        .iter()
+        .filter(|p| p.turn.abs() < 1e-3)
+        .map(|p| p.item.model.length)
+        .fold(0., f64::max)
+        / 4.)
+        .clamp(2., 12.);
+    let bins = 72usize;
+    let key = |n: &TrackState| {
+        (
+            (n.p[0] / resolution).floor() as i64,
+            (n.p[1] / resolution).floor() as i64,
+            (n.heading.rem_euclid(TAU) / TAU * bins as f64).round() as usize % bins,
+        )
+    };
+    let mut nodes: Vec<TrackState> = Vec::new();
+    let mut best: HashMap<(i64, i64, usize), usize> = HashMap::new();
+    let mut heap = BinaryHeap::new();
+    let mut push = |n: TrackState, nodes: &mut Vec<TrackState>, heap: &mut BinaryHeap<Node>| {
+        let k = key(&n);
+        if best.get(&k).is_some_and(|&i| nodes[i].g <= n.g + 1e-9) {
+            return;
+        }
+        heap.push(Node { cost: n.g + weight * heuristic(n.p), index: nodes.len() });
+        best.insert(k, nodes.len());
+        nodes.push(n);
+    };
+    let from = waypoints[stage];
+    if starts.is_empty() {
+        let toward = sub(target, from);
+        for heading in std::iter::once(toward[1].atan2(toward[0]))
+            .chain((0..bins).map(|b| b as f64 * TAU / bins as f64))
+        {
+            push(
+                TrackState { p: from, heading, g: 0., parent: usize::MAX, piece: usize::MAX, origin: 0, band: None },
+                &mut nodes,
+                &mut heap,
+            );
+        }
+    } else {
+        for st in starts {
+            push(
+                TrackState { p: st.p, heading: st.heading, g: st.g, parent: usize::MAX, piece: usize::MAX, origin: st.origin, band: st.band },
+                &mut nodes,
+                &mut heap,
+            );
+        }
+    }
+    let world_line = |n: &TrackState, piece: &Piece| -> Vec<Point> {
+        piece.line.iter().map(|q| pose(n.p, n.heading, *q)).collect()
+    };
+    let fits = |line: &[Point], piece: &Piece, band: Option<(f64, f64)>| {
+        crossings.allows(piece.item, line, s.tolerance)
+            .then(|| profile_band(line, terrain, s, forbidden, s.tolerance, band))
+            .flatten()
+    };
+    let departs = |n: &TrackState| all.iter().any(|piece| fits(&world_line(n, piece), piece, n.band).is_some());
+    let mut goals: Vec<usize> = Vec::new();
+    let mut found_at = usize::MAX;
+    let mut exhausted = false;
+    let mut pops = 0usize;
+    while let Some(Node { index, cost }) = heap.pop() {
+        pops += 1;
+        if pops.is_multiple_of(256) {
+            ensure!(!cancel.load(AO::Relaxed), "Wyznaczanie anulowane");
+        }
+        let n = nodes[index];
+        if cost > n.g + weight * heuristic(n.p) + 1e-6 {
+            continue;
+        }
+        if let Some(&first) = goals.first()
+            && (cost > nodes[first].g * 2. + 100. || nodes.len() > found_at + found_at / 2 + 50_000)
+        {
+            break;
+        }
+        let distance = norm(sub(target, n.p));
+        if n.piece != usize::MAX && distance <= reach {
+            let sector = |h: f64| (h.rem_euclid(TAU) / TAU * 8.) as usize % 8;
+            if (last || departs(&n)) && !goals.iter().any(|&g| sector(nodes[g].heading) == sector(n.heading)) {
+                goals.push(index);
+                found_at = found_at.min(nodes.len());
+            }
+            if last || goals.len() == 8 {
+                break;
+            }
+            continue;
+        }
+        if nodes.len() > budget {
+            exhausted = true;
+            break;
+        }
+        for (i, piece) in all.iter().enumerate() {
+            if short(piece) && distance > long + reach {
+                continue;
+            }
+            let line = world_line(&n, piece);
+            let Some(b) = fits(&line, piece, n.band) else { continue };
+            let length = piece.item.model.length;
+            push(
+                TrackState {
+                    p: pose(n.p, n.heading, piece.exit),
+                    heading: n.heading + piece.turn,
+                    g: n.g + length + s.slope_weight * b.climb + 0.1 * piece.turn.abs() * s.min_radius
+                        + s.earth_weight * b.earth,
+                    parent: index,
+                    piece: i,
+                    origin: n.origin,
+                    band: Some((b.lo, b.hi)),
+                },
+                &mut nodes,
+                &mut heap,
+            );
+        }
+    }
+    ensure!(!cancel.load(AO::Relaxed), "Wyznaczanie anulowane");
+    if goals.is_empty() {
+        let closest = nodes.iter().map(|n| norm(sub(n.p, target))).fold(f64::INFINITY, f64::min);
+        return Ok(Err((exhausted, closest)));
+    }
+    Ok(Ok(goals
+        .into_iter()
+        .map(|goal| {
+            let mut steps = Vec::new();
+            let mut at = goal;
+            while nodes[at].parent != usize::MAX {
+                let parent = nodes[nodes[at].parent];
+                steps.push((nodes[at].piece, parent.p, parent.heading));
+                at = nodes[at].parent;
+            }
+            steps.reverse();
+            let n = nodes[goal];
+            TrackArrival { p: n.p, heading: n.heading, g: n.g, origin: nodes[at].origin, band: n.band, steps }
+        })
+        .collect()))
+}
+
+/// A planned route: its chained pieces and the extra objects along it (level-crossing decks).
+#[derive(Debug, Default)]
+pub struct Planned {
+    pub parts: Vec<crate::roads::PlacedPart>,
+    pub extras: Vec<crate::roads::PlacedPart>,
+}
 /// Terrain route through `waypoints` fitted with models of `family`. The fitted models may
 /// deviate from the searched line by up to `tolerance`, so the search first keeps a 10 %
-/// grade margin; without a fitting result it uses the full grade. The models themselves are
+/// grade margin; without a fitting result it uses the full grade. Curves are searched no
+/// tighter than the family's tightest allowed curve model. The models themselves are
 /// always checked against the full settings.
 #[allow(clippy::too_many_arguments)]
 pub fn plan(
@@ -586,20 +979,39 @@ pub fn plan(
     catalog: &[crate::roads::CatalogPart],
     s: &RoutingSettings,
     forbidden: &Obstacles,
+    crossings: &crate::rails::Crossings,
     cancel: &AtomicBool,
-) -> Result<Vec<crate::roads::PlacedPart>> {
+) -> Result<Planned> {
+    // Tracks are built from their pieces directly; there is nothing to fit afterwards.
+    if crate::rails::is_track_family(family) {
+        return plan_track(terrain, waypoints, family, catalog, s, forbidden, crossings, cancel);
+    }
     let allowed = |a, b| !cancel.load(AO::Relaxed) && permitted(a, b, terrain, s, forbidden);
+    // A line tighter than the tightest usable curve model cannot be followed; search with
+    // that radius (and a small margin) instead of the bare minimum.
+    let tightest = catalog
+        .iter()
+        .filter(|m| m.family == family && m.category == 4)
+        .filter_map(|m| {
+            let (a, b) = (m.model.ports[0]?.outward, m.model.ports[1]?.outward);
+            let turn = (-a[0] * b[1] + a[1] * b[0]).atan2(-a[0] * b[0] - a[1] * b[1]).abs();
+            (turn > 1e-5).then(|| m.model.length / turn)
+        })
+        .filter(|r| *r >= s.min_radius - 1e-6)
+        .fold(f64::INFINITY, f64::min);
+    let radius = if tightest.is_finite() { tightest.max(s.min_radius) * 1.05 } else { s.min_radius };
     let mut error = None;
     for margin in [0.9, 1.] {
         let search = RoutingSettings {
             max_grade: s.max_grade * margin,
+            min_radius: radius,
             ..s.clone()
         };
         let attempt = find(terrain, waypoints, &search, forbidden, cancel)
             .and_then(|path| crate::roads::fit_path(&path, family, catalog, s, allowed));
         ensure!(!cancel.load(AO::Relaxed), "Wyznaczanie anulowane");
         match attempt {
-            Ok(parts) => return Ok(parts),
+            Ok(parts) => return Ok(Planned { parts, extras: vec![] }),
             Err(e) => error = Some(e),
         }
     }
@@ -653,7 +1065,7 @@ pub fn find(
         starts = arrivals
             .iter()
             .enumerate()
-            .map(|(i, a)| Start { heading: a.heading, g: a.g, origin: i })
+            .map(|(i, a)| Start { heading: a.heading, g: a.g, origin: i, band: a.band })
             .collect();
         paths = arrivals
             .into_iter()
@@ -673,12 +1085,14 @@ struct Start {
     heading: f64,
     g: f64,
     origin: usize,
+    band: Option<(f64, f64)>,
 }
 /// One way of finishing a leg, cheapest first.
 struct Arrival {
     heading: f64,
     g: f64,
     origin: usize,
+    band: Option<(f64, f64)>,
     line: Vec<Point>,
 }
 
@@ -757,7 +1171,7 @@ fn leg_search(
         if n.stage == 1 {
             return 0.;
         }
-        let dz = (target_z - terrain.sample(n.p).unwrap_or(target_z)).abs();
+        let dz = ((target_z - terrain.sample(n.p).unwrap_or(target_z)).abs() - s.max_cut - s.max_fill).max(0.);
         let analytic = norm(sub(target, n.p)).max(dz / (s.max_grade / 100.)) + s.slope_weight * dz;
         analytic.max(field.estimate(stage, n.p))
     };
@@ -794,7 +1208,7 @@ fn leg_search(
     let starts = if starts.is_empty() {
         free = std::iter::once(toward[1].atan2(toward[0]))
             .chain((0..bins).map(|b| b as f64 * TAU / bins as f64))
-            .map(|heading| Start { heading, g: 0., origin: 0 })
+            .map(|heading| Start { heading, g: 0., origin: 0, band: None })
             .collect();
         &free
     } else {
@@ -811,6 +1225,7 @@ fn leg_search(
                 delta: 0.,
                 length: 0.,
                 origin: start.origin,
+                band: start.band,
             },
             &mut nodes,
             &mut heap,
@@ -842,7 +1257,7 @@ fn leg_search(
             // per 45° sector, so the next leg can choose its direction (e.g. near the map edge).
             let departs = last
                 || turns.iter().any(|&delta| {
-                    profile(&arc(target, n.heading, delta, step), terrain, s, forbidden, clearance)
+                    profile_band(&arc(target, n.heading, delta, step), terrain, s, forbidden, clearance, n.band)
                         .is_some()
                 });
             let sector = |h: f64| (h.rem_euclid(TAU) / TAU * 8.) as usize % 8;
@@ -861,17 +1276,18 @@ fn leg_search(
         }
         let mut expand = |delta: f64, length: f64, arrived: usize, exact: Option<Point>| {
             let line = arc(n.p, n.heading, delta, length);
-            if let Some(climb) = profile(&line, terrain, s, forbidden, clearance) {
+            if let Some(b) = profile_band(&line, terrain, s, forbidden, clearance, n.band) {
                 push(
                     State {
                         p: exact.unwrap_or(*line.last().unwrap()),
                         heading: n.heading + delta,
                         stage: arrived,
-                        g: n.g + edge_cost(length, climb, delta),
+                        g: n.g + edge_cost(length, b.climb, delta) + s.earth_weight * b.earth,
                         parent: index,
                         delta,
                         length,
                         origin: n.origin,
+                        band: Some((b.lo, b.hi)),
                     },
                     &mut nodes,
                     &mut heap,
@@ -914,7 +1330,7 @@ fn leg_search(
                 line.extend(part.into_iter().skip(1));
             }
             let n = nodes[goal];
-            Arrival { heading: n.heading, g: n.g, origin: nodes[chain[0]].origin, line }
+            Arrival { heading: n.heading, g: n.g, origin: nodes[chain[0]].origin, band: n.band, line }
         })
         .collect()))
 }
@@ -1055,6 +1471,37 @@ mod tests {
     }
 
     #[test]
+    fn cuts_and_fills_shorten_a_steep_climb_and_leave_a_feasible_profile() {
+        let (dir, t) = hill("earth", 50., 110.);
+        let cancel = AtomicBool::new(false);
+        let (a, b) = ([300., 30.], [300., 300.]);
+        let plain = RoutingSettings { cell: 10., ..Default::default() };
+        let earth = RoutingSettings { max_cut: 8., max_fill: 8., earth_weight: 0.05, ..plain.clone() };
+        let length = |p: &[Point]| p.windows(2).map(|w| norm(sub(w[1], w[0]))).sum::<f64>();
+        let long = find(&t, &[a, b], &plain, &Obstacles::none(), &cancel).unwrap();
+        let short = find(&t, &[a, b], &earth, &Obstacles::none(), &cancel).unwrap();
+        assert!(length(&short) < length(&long) * 0.8, "{} vs {}", length(&short), length(&long));
+        // The shorter road is steeper than the terrain allows, but a profile within the
+        // 8 m band keeps the grade.
+        assert!(!short.windows(2).all(|w| permitted(w[0], w[1], &t, &plain, &Obstacles::none())));
+        let mut z = Vec::new();
+        let mut step = Vec::new();
+        for (i, w) in short.windows(2).enumerate() {
+            let n = (norm(sub(w[1], w[0])) / 2.).ceil().max(1.) as usize;
+            for k in usize::from(i > 0)..=n {
+                let f = k as f64 / n as f64;
+                z.push(t.sample([w[0][0] + (w[1][0] - w[0][0]) * f, w[0][1] + (w[1][1] - w[0][1]) * f]).unwrap());
+                step.push(if z.len() == 1 { 0. } else { norm(sub(w[1], w[0])) / n as f64 });
+            }
+        }
+        let e = crate::grading::Earthwork { max_grade: earth.max_grade, max_cut: 8., max_fill: 8., side_slope: 1.5 };
+        let h = crate::grading::design_profile(&z, &step, &e).unwrap();
+        assert!(h.iter().zip(&z).any(|(h, z)| (h - z).abs() > 1.), "earthwork used");
+        drop(t);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn steep_climb_to_summit_lengthens_the_road_within_max_grade() {
         // 50 m hill with slopes up to ~28 %: A at the foot, B on the summit. The shape of
         // the climb (spiral, serpentines, detour) is left to the search.
@@ -1145,7 +1592,7 @@ mod tests {
         ] {
             let (dir, t) = hill(name, height, sigma);
             let s = RoutingSettings { cell, max_grade, ..Default::default() };
-            let parts = plan(&t, &waypoints, "asf2", &catalog, &s, &Obstacles::none(), &cancel).unwrap();
+            let parts = plan(&t, &waypoints, "asf2", &catalog, &s, &Obstacles::none(), &crate::rails::Crossings::none(), &cancel).unwrap().parts;
             let road = centerline(&parts, &catalog);
             let end = *waypoints.last().unwrap();
             assert!(norm(sub(endpoint(&parts, &catalog).unwrap().p, end)) <= s.tolerance);

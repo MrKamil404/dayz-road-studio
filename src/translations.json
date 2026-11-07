@@ -575,9 +575,144 @@
     "pl": "Przywróć domyślny kolor tego typu",
     "en": "Restore the default color for this type"
   },
-{"en":"Edit points","pl":"Edytuj punkty"},
-{"en":"Drag a point to reshape the route. Double-click the line to add a point; double-right-click a point to remove it. Fit models again after editing.","pl":"Przeciągnij punkt, aby zmienić trasę. Podwójny klik na linii dodaje punkt; podwójny prawy klik na punkcie usuwa go. Po edycji dopasuj modele ponownie."},
-{"en":"Blending width on each side [m]","pl":"Szerokość wygładzania z każdej strony [m]"},
-{"en":"Smooth road profile with a gradual transition to surrounding terrain. Width is measured from segment edges; 0 m changes only the MLOD footprint.","pl":"Płynny profil pod drogą i łagodne przejście do otaczającego terenu. Szerokość liczona od krawędzi partów; 0 m zmienia tylko obrys MLOD."},
-{"en":"Invalid terrain blending width","pl":"Nieprawidłowa szerokość wygładzania terenu"}
+  {
+    "en": "Edit points",
+    "pl": "Edytuj punkty"
+  },
+  {
+    "en": "Drag a point to reshape the route. Double-click the line to add a point; double-right-click a point to remove it. Fit models again after editing.",
+    "pl": "Przeciągnij punkt, aby zmienić trasę. Podwójny klik na linii dodaje punkt; podwójny prawy klik na punkcie usuwa go. Po edycji dopasuj modele ponownie."
+  },
+  {
+    "en": "Blending width on each side [m]",
+    "pl": "Szerokość wygładzania z każdej strony [m]"
+  },
+  {
+    "en": "Smooth road profile with a gradual transition to surrounding terrain. Width is measured from segment edges; 0 m changes only the MLOD footprint.",
+    "pl": "Płynny profil pod drogą i łagodne przejście do otaczającego terenu. Szerokość liczona od krawędzi partów; 0 m zmienia tylko obrys MLOD."
+  },
+  {
+    "en": "Invalid terrain blending width",
+    "pl": "Nieprawidłowa szerokość wygładzania terenu"
+  },
+  {
+    "pl": "Przerwano sprawdzanie aktualizacji",
+    "en": "Update check was interrupted"
+  },
+  {
+    "pl": "Nie można ustalić ścieżki programu",
+    "en": "Cannot determine the program path"
+  },
+  {
+    "pl": "Sprawdzanie aktualizacji…",
+    "en": "Checking for updates…"
+  },
+  {
+    "pl": "Nowa wersja {0}",
+    "en": "New version {0}"
+  },
+  {
+    "pl": "Pobieranie {0}",
+    "en": "Downloading {0}"
+  },
+  {
+    "pl": "Uruchom ponownie, aby użyć {0}",
+    "en": "Restart to use {0}"
+  },
+  {
+    "pl": "Sprawdź aktualizacje",
+    "en": "Check for updates"
+  },
+  {
+    "pl": "Nie udało się sprawdzić aktualizacji",
+    "en": "Could not check for updates"
+  },
+  {
+    "pl": "Masz najnowszą wersję",
+    "en": "You have the latest version"
+  },
+  {
+    "pl": "Aktualizacja programu",
+    "en": "Program update"
+  },
+  {
+    "pl": "Dostępna wersja {0}",
+    "en": "Version {0} is available"
+  },
+  {
+    "pl": "Twoja wersja: {0}",
+    "en": "Your version: {0}"
+  },
+  {
+    "pl": "Brak opisu zmian",
+    "en": "No release notes"
+  },
+  {
+    "pl": "Pobierz i zainstaluj ({0} MB)",
+    "en": "Download and install ({0} MB)"
+  },
+  {
+    "pl": "Pobrany program zastąpi obecny plik; poprzedni zostaje jako .old do następnego uruchomienia.",
+    "en": "The downloaded program replaces the current file; the previous one is kept as .old until the next start."
+  },
+  {
+    "pl": "Wydanie nie zawiera pliku .exe do pobrania",
+    "en": "The release has no .exe file to download"
+  },
+  {
+    "pl": "Strona wydania",
+    "en": "Release page"
+  },
+  {
+    "pl": "Później",
+    "en": "Later"
+  },
+  {
+    "pl": "Zainstalowano. Nowa wersja zadziała po ponownym uruchomieniu.",
+    "en": "Installed. The new version runs after a restart."
+  },
+  {
+    "pl": "Uruchom ponownie",
+    "en": "Restart"
+  },
+  {
+    "pl": "Nie udało się przygotować połączenia HTTPS",
+    "en": "Could not prepare the HTTPS connection"
+  },
+  {
+    "pl": "Nie udało się połączyć z GitHub",
+    "en": "Could not connect to GitHub"
+  },
+  {
+    "pl": "Nieprawidłowa odpowiedź GitHub",
+    "en": "Invalid response from GitHub"
+  },
+  {
+    "pl": "Nie udało się pobrać nowej wersji",
+    "en": "Could not download the new version"
+  },
+  {
+    "pl": "Nie można zapisać pliku {0}",
+    "en": "Cannot write file {0}"
+  },
+  {
+    "pl": "Przerwano pobieranie nowej wersji",
+    "en": "Download of the new version was interrupted"
+  },
+  {
+    "pl": "Pobrano {0} z {1} bajtów nowej wersji",
+    "en": "Downloaded {0} of {1} bytes of the new version"
+  },
+  {
+    "pl": "Pobrany plik nie jest programem Windows",
+    "en": "The downloaded file is not a Windows program"
+  },
+  {
+    "pl": "Nie można zastąpić pliku {0}",
+    "en": "Cannot replace file {0}"
+  },
+  {
+    "pl": "Nie można zastąpić pliku {0}: {1}",
+    "en": "Cannot replace file {0}: {1}"
+  }
 ]

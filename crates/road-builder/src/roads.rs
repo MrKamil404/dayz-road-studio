@@ -191,6 +191,127 @@ fn direction_at(line: &[Point], progress: f64) -> Point {
     }
     direction
 }
+/// [`merge_straights`] for the pieces of `family` in `catalog`.
+pub fn merge_straight_runs(
+    parts: Vec<PlacedPart>,
+    catalog: &[CatalogPart],
+    family: &str,
+    allowed: impl Fn(&CatalogPart, &[Point]) -> bool,
+) -> Result<Vec<PlacedPart>> {
+    let choices: Vec<_> = catalog
+        .iter()
+        .filter(|m| m.family == family && [3, 4].contains(&m.category))
+        .collect();
+    if parts.is_empty() {
+        return Ok(parts);
+    }
+    merge_straights(parts, &choices, allowed)
+}
+/// Replace every run of consecutive straight pieces by the fewest straights of the same
+/// total length, then re-place the chain from its first piece so every joint stays exact.
+/// Straights are collinear, so the track keeps its shape while tiny pieces disappear. A
+/// merged run whose pieces no longer pass `allowed` (the slope is sampled along each piece,
+/// so new piece boundaries sample the terrain elsewhere) is kept as it was.
+fn merge_straights(
+    parts: Vec<PlacedPart>,
+    choices: &[&CatalogPart],
+    allowed: impl Fn(&CatalogPart, &[Point]) -> bool,
+) -> Result<Vec<PlacedPart>> {
+    let straights: Vec<_> = choices.iter().filter(|c| c.category == 3).collect();
+    let cm = |m: &CatalogPart| (m.model.length * 100.).round() as usize;
+    let find = |name: &str| choices.iter().find(|c| c.path == name).copied();
+    // Fewest straights with exactly `total` centimetres, longest first.
+    let combine = |total: usize| -> Option<Vec<String>> {
+        let mut best: Vec<Option<(usize, usize)>> = vec![None; total + 1];
+        best[0] = Some((0, usize::MAX));
+        for t in 1..=total {
+            for (i, m) in straights.iter().enumerate() {
+                let l = cm(m);
+                if l > 0 && l <= t
+                    && let Some((n, _)) = best[t - l]
+                    && best[t].is_none_or(|(k, _)| n + 1 < k)
+                {
+                    best[t] = Some((n + 1, i));
+                }
+            }
+        }
+        best[total]?;
+        let mut t = total;
+        let mut merged = Vec::new();
+        while t > 0 {
+            let (_, i) = best[t].unwrap();
+            merged.push(straights[i].path.clone());
+            t -= cm(straights[i]);
+        }
+        merged.sort_by_key(|p| std::cmp::Reverse(cm(find(p).unwrap())));
+        Some(merged)
+    };
+    // Runs of two or more straights: (first index, end index).
+    let mut runs = Vec::new();
+    let mut i = 0;
+    while i < parts.len() {
+        let straight = |k: usize| find(&parts[k].model).is_some_and(|m| m.category == 3);
+        let mut j = i;
+        while j < parts.len() && straight(j) {
+            j += 1;
+        }
+        if j - i > 1 {
+            runs.push((i, j));
+        }
+        i = j.max(i + 1);
+    }
+    let first = &parts[0];
+    let model = &find(&first.model).context("Brak modelu w katalogu")?.model;
+    let entry = model.ports[usize::from(first.reverse)].context("Brak portu modelu")?;
+    let angle = -first.rotation.to_radians();
+    let start = Port {
+        p: add(rotate(entry.p, angle), first.position),
+        outward: mul(rotate(entry.outward, angle), -1.),
+    };
+    let mut keep = vec![false; runs.len()];
+    loop {
+        // (model, reversed, run it was merged from)
+        let mut pieces: Vec<(String, bool, Option<usize>)> = Vec::new();
+        let mut next = 0;
+        for (r, &(a, b)) in runs.iter().enumerate() {
+            pieces.extend(parts[next..a].iter().map(|p| (p.model.clone(), p.reverse, None)));
+            let total: usize = parts[a..b].iter().map(|p| cm(find(&p.model).unwrap())).sum();
+            match combine(total).filter(|m| !keep[r] && m.len() < b - a) {
+                Some(merged) => pieces.extend(merged.into_iter().map(|m| (m, false, Some(r)))),
+                None => pieces.extend(parts[a..b].iter().map(|p| (p.model.clone(), p.reverse, None))),
+            }
+            next = b;
+        }
+        pieces.extend(parts[next..].iter().map(|p| (p.model.clone(), p.reverse, None)));
+        if pieces.len() == parts.len() {
+            return Ok(parts);
+        }
+        let mut at = start;
+        let mut out = Vec::with_capacity(pieces.len());
+        let mut rejected = false;
+        for (name, reverse, run) in pieces {
+            let item = find(&name).unwrap();
+            let placed = place(item, at, reverse)?;
+            at = placed_endpoint(&placed, &item.model)?;
+            if let Some(r) = run {
+                let world: Vec<_> = item
+                    .model
+                    .line
+                    .iter()
+                    .map(|q| add(rotate(*q, -placed.rotation.to_radians()), placed.position))
+                    .collect();
+                if !allowed(item, &world) {
+                    keep[r] = true;
+                    rejected = true;
+                }
+            }
+            out.push(placed);
+        }
+        if !rejected {
+            return Ok(out);
+        }
+    }
+}
 /// Greedy connector-exact fitting with lookahead. Failure leaves the document untouched.
 pub fn fit(
     points: &[Point],
@@ -205,6 +326,8 @@ pub fn fit(
 }
 /// Fit models to an already curvature-limited centreline (for example a terrain route)
 /// without rounding its corners again, so the road stays on every point of the line.
+/// Roads start and end with a `konec` cap. Railway tracks (`Rail_Track*` families) have no
+/// caps; their last piece may end up to half the shortest piece before the final point.
 pub fn fit_path(
     points: &[Point],
     family: &str,
@@ -213,18 +336,25 @@ pub fn fit_path(
     allowed: impl Fn(Point, Point) -> bool,
 ) -> Result<Vec<PlacedPart>> {
     ensure!(points.len() >= 2, "Wskaż przynajmniej dwa punkty");
-    let cap=catalog.iter().filter(|m|m.family==family && m.category==6)
-        .find(|m|m.path.rsplit(['\\','/']).next().unwrap_or("").to_lowercase().contains("konec"))
-        .context("Brak segmentu konec MLOD dla wybranego typu drogi. Dodaj go do definicji Road Tool i wczytaj modele")?;
-    ensure!(
-        cap.model.ports[0].is_some() && cap.model.ports[1].is_some(),
-        "Segment konec nie ma obu portów połączenia"
-    );
+    let track = crate::rails::is_track_family(family);
+    let cap = if track {
+        None
+    } else {
+        let cap=catalog.iter().filter(|m|m.family==family && m.category==6)
+            .find(|m|m.path.rsplit(['\\','/']).next().unwrap_or("").to_lowercase().contains("konec"))
+            .context("Brak segmentu konec MLOD dla wybranego typu drogi. Dodaj go do definicji Road Tool i wczytaj modele")?;
+        ensure!(
+            cap.model.ports[0].is_some() && cap.model.ports[1].is_some(),
+            "Segment konec nie ma obu portów połączenia"
+        );
+        Some(cap)
+    };
+    let cap_length = cap.map_or(0., |c| c.model.length);
     let choices: Vec<_> = catalog
         .iter()
         .filter(|m| {
             m.family == family
-                && m.road_type_index == cap.road_type_index
+                && cap.is_none_or(|c| m.road_type_index == c.road_type_index)
                 && [3, 4].contains(&m.category)
                 && m.model.ports[2].is_none()
                 && m.model.ports[3].is_none()
@@ -234,11 +364,17 @@ pub fn fit_path(
         !choices.is_empty(),
         "Brak prostych i zakrętów MLOD dla tej rodziny"
     );
+    // Without caps the end can only be met to within half the shortest piece.
+    let slack = if track {
+        choices.iter().map(|m| m.model.length).fold(f64::INFINITY, f64::min) / 2.
+    } else {
+        0.
+    };
     let length: f64 = points.windows(2).map(|w| norm(sub(w[1], w[0]))).sum();
     let end = *points.last().unwrap();
     let initial = sub(points[1], points[0]);
     ensure!(
-        length >= 2. * cap.model.length && norm(initial) > 1e-6,
+        length >= 2. * cap_length && norm(initial) > 1e-6,
         "Trasa jest za krótka na dwa segmenty konec lub ma powtórzone punkty"
     );
     let mut at = Port {
@@ -249,7 +385,7 @@ pub fn fit_path(
     let ahead = choices
         .iter()
         .map(|m| m.model.length)
-        .fold(cap.model.length, f64::max)
+        .fold(cap_length, f64::max)
         + s.tolerance * 2.
         + 10.;
     let near = |p: Point, from: f64| nearest_progress_in(p, points, from - s.tolerance * 2., from + ahead);
@@ -263,33 +399,47 @@ pub fn fit_path(
             && world.iter().all(|q| near(*q, from).0 <= s.tolerance)
             && world.windows(2).all(|w| allowed(w[0], w[1]))
     };
-    let first = place(cap, at, false)?;
-    ensure!(
-        valid_part(&first, &cap.model, 0.),
-        "Początkowy segment konec nie mieści się na trasie lub nie spełnia ograniczeń terenu"
-    );
-    at = placed_endpoint(&first, &cap.model)?;
+    let mut parts = Vec::new();
+    if let Some(cap) = cap {
+        let first = place(cap, at, false)?;
+        ensure!(
+            valid_part(&first, &cap.model, 0.),
+            "Początkowy segment konec nie mieści się na trasie lub nie spełnia ograniczeń terenu"
+        );
+        at = placed_endpoint(&first, &cap.model)?;
+        parts.push(first);
+    }
+    let base = parts.len();
     let mut progress = near(at.p, 0.).1;
-    let mut parts = vec![first];
     // Depth-first with the best-scored models first: when no model fits, step back and try
     // the next alternative of an earlier choice. Frame `i` holds the untried alternatives
     // for `parts[i + 1]`, best last.
     let mut stack: Vec<Vec<(PlacedPart, Port, f64)>> = Vec::new();
     let mut furthest = progress;
     for _ in 0..50000 {
-        let last = place(cap, at, false)?;
-        let last_end = placed_endpoint(&last, &cap.model)?;
-        if norm(sub(last_end.p, end)) <= s.tolerance
-            && near(last_end.p, progress).1 >= length - s.tolerance * 2.
-            && valid_part(&last, &cap.model, progress)
+        if let Some(cap) = cap {
+            let last = place(cap, at, false)?;
+            let last_end = placed_endpoint(&last, &cap.model)?;
+            if norm(sub(last_end.p, end)) <= s.tolerance
+                && near(last_end.p, progress).1 >= length - s.tolerance * 2.
+                && valid_part(&last, &cap.model, progress)
+            {
+                parts.push(last);
+                return Ok(parts);
+            }
+        } else if parts.len() > base
+            && norm(sub(at.p, end)) <= s.tolerance + slack
+            && progress >= length - s.tolerance * 2. - slack
         {
-            parts.push(last);
-            return Ok(parts);
+            return merge_straights(parts, &choices, |_, line: &[Point]| {
+                line.windows(2).all(|w| allowed(w[0], w[1]))
+            });
         }
         let mut options = Vec::new();
         for item in &choices {
             for reverse in [false, true] {
-                // Only curves support the native reversed-segment code.
+                // Only curves support the native reversed-segment code; a straight track
+                // reversed is the same piece.
                 if reverse && item.category != 4 {
                     continue;
                 }
@@ -311,7 +461,7 @@ pub fn fit_path(
                 };
                 let (deviation, pr) = near(next.p, progress);
                 if pr <= progress + 0.01 || deviation > s.tolerance
-                    || pr + cap.model.length > length + s.tolerance
+                    || pr + cap_length > length + s.tolerance
                 {
                     continue;
                 }
@@ -385,7 +535,7 @@ pub fn fit_path(
                 );
             };
             if let Some((p, next, pr)) = frame.pop() {
-                parts.truncate(stack.len());
+                parts.truncate(base + stack.len() - 1);
                 parts.push(p);
                 at = next;
                 progress = pr;

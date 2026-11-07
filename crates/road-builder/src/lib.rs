@@ -3,6 +3,10 @@ pub mod document;
 pub mod geometry;
 pub mod grading;
 pub mod i18n;
+pub mod odol;
+pub mod mesh3d;
+pub mod paa;
+pub mod rails;
 pub mod raster;
 pub mod roads;
 pub mod routing;
@@ -10,6 +14,7 @@ pub mod shapefile;
 pub mod storage;
 pub mod terrain;
 pub mod tv4p;
+pub mod view3d;
 extern crate self as dayz_road_tool;
 
 pub mod png;

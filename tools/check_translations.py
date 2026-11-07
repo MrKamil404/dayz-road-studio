@@ -31,9 +31,10 @@ technical = {
     'TERRAIN BUILDER / DAYZ', 'DAYZ ROAD STUDIO', 'Merge', 'Road Builder',
     'toolsets', 'shell-language', 'DayZ Road Tools {}', 'DayZ Road Tools',
     'ui-screenshot', 'EFRAME_SCREENSHOT_TO', 'DAYZ_SCREENSHOT_TOOLSET', 'builder', 'merge',
+    'DAYZ_NO_UPDATE_CHECK', 'DAYZ_SCREENSHOT_3D', 'update-window', '{:.1} / {:.1} MB', '{e:#}', 'MZ', 'https://api.github.com/repos/{REPOSITORY}/releases/latest',
 }
 missing = []
-for filename in ('gui.rs', 'shell.rs', 'main.rs', 'tv4p.rs', 'render.rs', 'geometry.rs'):
+for filename in ('gui.rs', 'shell.rs', 'main.rs', 'tv4p.rs', 'render.rs', 'geometry.rs', 'update.rs'):
     source = (ROOT / 'src' / filename).read_text(encoding='utf-8').split('#[cfg(test)]')[0]
     for match in re.finditer(r'"(?:\\.|[^"\\])*"', source):
         try:
@@ -45,7 +46,7 @@ for filename in ('gui.rs', 'shell.rs', 'main.rs', 'tv4p.rs', 'render.rs', 'geome
             continue
         if filename not in ('gui.rs', 'shell.rs'):
             prefix = source[max(0, match.start() - 90):match.start()]
-            if not re.search(r'(bail!|anyhow!|context|format!|println!|write!)\s*\([^";]*$', prefix):
+            if not re.search(r'(bail!|anyhow!|ensure!|context|format!|println!|write!)\s*\([^";]*$', prefix):
                 continue
             if text.startswith('GUI:'):
                 continue
@@ -81,7 +82,7 @@ for path in builder.glob('*.rs'):
             re.search(r'(bail!|anyhow!|ensure!|context)\s*\([^";]*$', prefix)
             and re.search(r'[A-Za-z]', text)
         )
-        if message and text not in {'MLOD', 'BM'} and normalized(text) not in known:
+        if message and text not in {'MLOD', 'ODOL', 'BM', 'P3DM', 'TAGG'} and normalized(text) not in known:
             line = source.count('\n', 0, match.start()) + 1
             missing.append((path.name, line, text))
 assert not missing, missing

@@ -1,16 +1,20 @@
-# DayZ Road Studio 2.4.0
+# DayZ Road Studio 2.5.0
 
 A Windows application for merging and designing roads in Terrain Builder `.tv4p` projects. DayZ Road Studio combines **Merge** and **Road Builder** with geometry previews, terrain tools and PNG export. Written in Rust.
 
 The same executable now includes **Road Builder**, integrated from DayZRoadToolExternal 0.1.5. Starting without a CLI command opens a launcher with **Merge** and **Road Builder**. After choosing a toolset, use the top tabs to switch; both tools retain their loaded projects, views, selections and work in progress for the current session. **Tools** returns to the launcher. The shared **Polski / English** selector covers both tools, including Builder dialogs and statuses. Background jobs continue while another tab is active. Closing checks Builder's unsaved changes even from Merge.
 
-Road Builder includes editing existing drawn route lines, manual and live road drawing, MLOD segment fitting, SHP import, tiled satellite BMP/PNG, ASC terrain and contours, terrain routing, grading under road footprints, undo/redo, `.dzroad` project saving and TV4P/ASC export. See [the Road Builder guide](docs/road-builder.md). To transfer work between tools, export a TV4P file and open it in the other tool; switching tabs does not transfer projects automatically. Sessions are not restored automatically after restarting.
+Road Builder includes editing existing drawn route lines, manual and live road drawing, MLOD segment fitting, SHP import, tiled satellite BMP/PNG, ASC terrain and contours, terrain routing for roads and railway tracks, cuts and embankments, grading under roads and tracks, a 3D view with the road and track P3D models, undo/redo, `.dzroad` project saving and TV4P/ASC/Terrain Builder object export. See the Road Builder sections below. To transfer work between tools, export a TV4P file and open it in the other tool; switching tabs does not transfer projects automatically. Sessions are not restored automatically after restarting.
 
 The Builder sources are included in `crates/road-builder`; building needs no neighbouring repository or separate Builder EXE. Its TV4P and geometry implementations remain separate from Merge to preserve the original editor's export behaviour.
 
 ![Launcher](https://raw.githubusercontent.com/MrKamil404/dayz-road-studio/refs/heads/main/images/prev2.png)
+![Road Builder: roads from TV4P, a railway route, satellite and contours](https://raw.githubusercontent.com/MrKamil404/dayz-road-studio/refs/heads/main/images/prev3.png)
+![3D view: satellite on ASC terrain with the road models](https://raw.githubusercontent.com/MrKamil404/dayz-road-studio/refs/heads/main/images/prev5.png)
+![3D view: low camera with terrain up to the horizon](https://raw.githubusercontent.com/MrKamil404/dayz-road-studio/refs/heads/main/images/prev6.png)
+![3D view: textured road part models](https://raw.githubusercontent.com/MrKamil404/dayz-road-studio/refs/heads/main/images/prev7.png)
+![3D view: railway track models on ungraded terrain](https://raw.githubusercontent.com/MrKamil404/dayz-road-studio/refs/heads/main/images/prev8.png)
 ![Legacy Road Merger 1.1 interface](https://raw.githubusercontent.com/MrKamil404/Terrain-Builder-Road-Merger/refs/heads/main/images/prev1.png)
-![Road builder](https://raw.githubusercontent.com/MrKamil404/dayz-road-studio/refs/heads/main/images/prev3.png)
 ![Result](https://raw.githubusercontent.com/MrKamil404/dayz-road-studio/refs/heads/main/images/prev4.png)
 
 > [!CAUTION]
@@ -22,7 +26,14 @@ Special thanks to **WoozyMasta** for [tv4p-road-tool](https://github.com/WoozyMa
 
 ## Version
 
-Current application version: **2.4.0** (`2.4.0` in Cargo). The application is named **DayZ Road Studio**. The executable remains `tv4p_merge_roads.exe` for compatibility with existing workflows. The version is shown in the window title and can be printed with `tv4p_merge_roads.exe --version`.
+Current application version: **2.5.0** (`2.5.0` in Cargo). The application is named **DayZ Road Studio**. The executable remains `tv4p_merge_roads.exe` for compatibility with existing workflows. The version is shown in the window title and can be printed with `tv4p_merge_roads.exe --version`.
+
+## Changes in 2.5
+
+- **3D view** in Road Builder: a 2D / 3D switch shows the ASC terrain under the satellite image, the water level and the road and track P3D models with their PAA textures. Terrain tiles follow the camera, detailed near it and coarser towards the horizon.
+- **Railway tracks**: track pieces are read from the binarised (ODOL) `Rail_Track*.p3d` models, routed across the terrain like roads with their own constraints, given level-crossing parts where they cross roads, and exported as a Terrain Builder object import file.
+- **Cuts and embankments**: road and track routing may lower or raise the road against the terrain within a maximum cut and fill, and **Grade ASC under the selected route** builds that profile with side slopes.
+- **Updates**: the program checks GitHub for a newer release at start, shows its notes and can download and install it.
 
 ## Changes in 2.0
 
@@ -103,7 +114,7 @@ Project controls remain at the top, the road list on the left, the preview in th
 
 ## Road geometry
 
-Default model folder: `P:\dz\structures\roads\parts`. Change it in the application if needed. The reader uses the lowest visual LOD mesh in **MLOD P3D** files and the `LB/PB`, `LE/PE`, `LH/LD`, `PH/PD` memory points. The X/Z projection provides the actual footprint, and connection points determine the next part's placement. ODOL files are not supported.
+Default model folder: `P:\dz\structures\roads\parts`. Change it in the application if needed. The reader uses the lowest visual LOD mesh in **MLOD P3D** files and the `LB/PB`, `LE/PE`, `LH/LD`, `PH/PD` memory points. The X/Z projection provides the actual footprint, and connection points determine the next part's placement. Road parts must be MLOD; binarised ODOL models are read only for railway tracks and for the 3D view.
 
 > [!NOTE]
 > Road previews require unbinarized MLOD P3D models. ODOL or other non-MLOD files produce a warning. A missing file may use filename-derived geometry, but an existing file in an unsupported format is not silently replaced.
@@ -216,3 +227,34 @@ In Road Builder, select a drawn route and choose **Route across terrain** after 
 ### Water and forbidden areas
 
 Road Builder's **Forbidden** tool draws forbidden areas and includes a **Water** section. **Avoid terrain below the water level** treats every ASC cell lower than **Water level m** (0 m by default) as forbidden, which covers the sea without drawing it. **Import water SHP…** reads Polygon, PolygonZ or PolygonM rings as forbidden areas (lakes, sea) and PolyLine, PolyLineZ or PolyLineM parts as rivers with the **River width m** chosen in the import window; coordinates are offset as in the road SHP import and the import is undone as one step. **Route across terrain**, live drawing, **Fit models to points** and the TV4P export check all avoid these areas, and terrain routing keeps at least the route tolerance away from them. **Show forbidden areas** (also **Forbidden areas** in the layer list) shows water below the level in blue, rivers as blue bands at their width and forbidden areas as red outlines. **Remove all forbidden areas** clears drawn and imported areas. Because water is forbidden, a road crossing it cannot be exported; place bridges where the water is not imported or with water detection turned off.
+
+### Cuts, embankments and grading
+
+**Road constraints** and **Track constraints** each have **Max. cut m**, **Max. fill m** and **Earthwork penalty**. With a cut or fill above 0 m, **Route across terrain** may lower the road into the terrain or raise it above it by up to those amounts, checks the maximum slope on that profile and adds the penalty (metres of road per m² of cut or fill along the route) to the route cost. A shorter road through a slope or over a hump then wins against a detour when the earthwork is cheaper. Both values default to 0 m, which routes exactly as before.
+
+**Grade ASC under the selected route** designs the road or track profile within the route's maximum slope, cut and fill, sets every ASC cell under the footprint to it and builds cut and embankment slopes outside the footprint at **Side slope 1:** (1.5 m horizontally per metre by default). **Blending width on each side** softens the shoulders. The status reports the largest fill and cut; Ctrl+Z undoes the change and **Export ASC…** saves it. Grade the terrain after routing with earthworks, otherwise the route relies on cuts and embankments that the ASC does not have yet.
+
+### Railway tracks
+
+**Track models…** loads the track pieces from `P:\dz\structures\rail\Tracks` (loaded automatically when that folder exists). The `Rail_Track`, `Rail_TrackE` and `Rail_TrackSmall` families appear in the type list; their geometry is measured from the binarised ODOL models. Draw a route with a track type and use **Route across terrain**: the search is built from the real straight and curved pieces and follows **Track constraints** (maximum slope, slope penalty, routing step, minimum radius, tolerance, cut, fill and earthwork penalty).
+
+Where a track crosses a road at 60° or more on a straight, a level-crossing part is placed: `Rail_Track_Passing_25` for standard track, `Rail_Crossing_Block` decks for `Rail_TrackE` and tiled small blocks for `Rail_TrackSmall`. Barriers are not placed.
+
+**Export tracks TB…** writes the track pieces as a Terrain Builder object import file (`"name";X;Y;yaw;0;0;1;0;`), imported with **File › Import › Objects**. Tracks are not part of the TV4P road network.
+
+### 3D view
+
+The **2D | 3D** switch in the top right corner of the map opens the 3D view where the 2D map was looking; switching back centres the map on the 3D camera target. Drag with the left mouse button to orbit, with the right or middle button to pan, and use the wheel to zoom.
+
+- The ASC terrain is drawn in tiles: near the camera at the full ASC and satellite resolution, coarser with distance, so the whole map stays visible up to the horizon. Tiles load in the background in the direction the camera looks.
+- **Satellite** drapes the imported satellite image over the terrain; without it the terrain is coloured by elevation.
+- **Water** shows a transparent plane at the water level of the **Forbidden** tool.
+- **Roads and tracks** shows the roads from the TV4P and the project routes. With **P3D models** they are drawn with their models and PAA textures. Road parts follow the terrain under every vertex. Track pieces stand level at the terrain height of their position, as the Terrain Builder export places them, so ungraded slopes show steps between pieces.
+- Without models, or for parts whose P3D cannot be read, the footprint is drawn in the road type colour; the selected route keeps its yellow footprint.
+- **Vertical exaggeration** (1–5×) and **Reset camera** help with flat or very large maps.
+
+The 3D view needs OpenGL 3.0 or newer. Textures are loaded up to 256 px and RVMAT materials are not applied.
+
+### Updates
+
+At start the program asks GitHub for the latest release. When it is newer than the running version, a **New version X.Y.Z** button appears in the top bar and the release notes open. **Download and install** downloads the release executable, checks its size and replaces the running file; the previous file is kept as `tv4p_merge_roads.exe.old` until the next start. **Restart** closes the program through the usual unsaved-changes prompt and starts the new version. **Check for updates** in the top bar checks again; set the environment variable `DAYZ_NO_UPDATE_CHECK=1` to skip the check at start. Updating works from 2.5.0 onwards; earlier versions have to be downloaded once by hand.

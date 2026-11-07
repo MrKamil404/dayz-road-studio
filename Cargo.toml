@@ -1,6 +1,6 @@
 [package]
 name = "tv4p_merge_roads"
-version = "2.4.0"
+version = "2.5.0"
 description = "DayZ Road Studio — Terrain Builder road merging and design tools"
 edition = "2024"
 
@@ -12,13 +12,15 @@ rfd = "0.15.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 image = { version = "0.25.10", default-features = false, features = ["png"] }
+ureq = { version = "2.12", default-features = false, features = ["json", "native-tls"] }
+native-tls = "0.2"
 
 [profile.release]
 lto = "thin"
 strip = true
 
 [features]
-ui-screenshot = ["eframe/__screenshot"]
+ui-screenshot = ["eframe/__screenshot", "dayz-road-tool/ui-screenshot"]
 
 [workspace]
 members = ["crates/road-builder"]

@@ -54,6 +54,23 @@ impl Raster {
         Ok((w, h, data))
     }
 }
+impl Raster {
+    /// An arbitrary pixel rectangle of one level, row 0 at the top (north).
+    pub fn region(&self, level: usize, x: u32, y: u32, w: u32, h: u32) -> Result<Vec<u8>> {
+        let l = self.levels.get(level).context("Brak poziomu rastra")?;
+        ensure!(
+            w > 0 && h > 0 && x + w <= l.width && y + h <= l.height,
+            "Kafelek poza obrazem"
+        );
+        let mut data = vec![0; w as usize * h as usize * 4];
+        let mut f = BufReader::new(File::open(self.path(level))?);
+        for row in 0..h {
+            f.seek(SeekFrom::Start(((y + row) as u64 * l.width as u64 + x as u64) * 4))?;
+            f.read_exact(&mut data[row as usize * w as usize * 4..(row + 1) as usize * w as usize * 4])?;
+        }
+        Ok(data)
+    }
+}
 fn rgba(row: &[u8], color: png::ColorType) -> Result<Vec<u8>> {
     use png::ColorType::*;
     let n = match color {

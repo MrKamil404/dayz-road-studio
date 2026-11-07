@@ -792,7 +792,8 @@ pub fn export_editor(
             bodies.push(body.to_vec());
         }
     }
-    for route in &doc.routes {
+    // Railway tracks are exported as Terrain Builder objects, not Road Tool roads.
+    for route in doc.routes.iter().filter(|r| !r.rail) {
         if route.parts.is_empty() {
             bail!("Droga {} nie ma dopasowanych segmentów", route.name);
         }
@@ -1072,7 +1073,7 @@ mod editor_tests {
             family: "asf2".into(),
             points,
             parts: parts.clone(),
-            replaces: None,
+            replaces: None, rail: false, extras: vec![],
         });
         export_editor(&base, &out, &doc, &c).unwrap();
         let b = fs::read(&out).unwrap();
@@ -1127,7 +1128,7 @@ mod editor_tests {
             family: "asf2".into(),
             points: vec![],
             parts: parts.clone(),
-            replaces: None,
+            replaces: None, rail: false, extras: vec![],
         });
         export_editor(&base, &out, &doc, &c).unwrap();
         let mut lib = Library::new(dir.clone());
@@ -1236,7 +1237,7 @@ mod editor_tests {
                     position: [200100., 200.],
                     rotation: 0.,
                 }],
-                replaces: None,
+                replaces: None, rail: false, extras: vec![],
             });
             export_editor(&base, &out, &doc, &c).unwrap();
             let output = std::fs::read(&out).unwrap();
@@ -1309,10 +1310,38 @@ mod editor_tests {
         doc.transforms.clear();
         doc.routes.push(Route {
             name: "replacement".into(), family: "asf2".into(),
-            points: vec![], parts: vec![], replaces: Some(999),
+            points: vec![], parts: vec![], replaces: Some(999), rail: false, extras: vec![],
         });
         assert!(export_editor(&base, &out, &doc, &[]).is_err());
         assert_eq!(fs::read(&out).unwrap(), deleted);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn railway_tracks_are_left_out_of_the_road_block() {
+        let dir = std::env::temp_dir().join(format!("road-rails-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let base = dir.join("base.tv4p");
+        let out = dir.join("out.tv4p");
+        let bytes = fixture();
+        fs::write(&base, &bytes).unwrap();
+        let mut doc = Document::default();
+        doc.routes.push(Route {
+            name: "track".into(),
+            family: "Rail_TrackE".into(),
+            points: vec![[0., 0.], [100., 0.]],
+            parts: vec![PlacedPart {
+                model: "P:\\dz\\structures\\rail\\Tracks\\Rail_TrackE_25.p3d".into(),
+                reverse: false,
+                position: [0., 0.],
+                rotation: 90.,
+            }],
+            replaces: None,
+            rail: true, extras: vec![],
+        });
+        // Track models are not Road Tool parts; the TV4P stays as it was.
+        export_editor(&base, &out, &doc, &[]).unwrap();
+        assert_eq!(fs::read(&out).unwrap(), bytes);
         fs::remove_dir_all(dir).unwrap();
     }
 }

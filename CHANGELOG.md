@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.5.0 — 2026-11-07
+
+### Added
+- **3D view** in Road Builder with a 2D / 3D switch: ASC terrain under the satellite image (or coloured by elevation), a transparent water plane at the water level, and the road and track P3D models with their PAA textures. Orbit, pan and zoom with the mouse; vertical exaggeration 1–5×.
+- Terrain tiles in the 3D view follow the camera: full ASC and satellite detail near it, coarser with distance, built in the background for the visible area only, so the whole map is visible up to the horizon.
+- Railway tracks: an ODOL reader measures the `Rail_Track`, `Rail_TrackE` and `Rail_TrackSmall` pieces; **Route across terrain** builds tracks from the real pieces with separate **Track constraints**; **Export tracks TB…** writes a Terrain Builder object import file.
+- Level-crossing parts where a track crosses a road: `Rail_Track_Passing_25`, `Rail_Crossing_Block` decks or tiled small blocks depending on the track family.
+- **Max. cut m**, **Max. fill m** and **Earthwork penalty** for roads and tracks: terrain routing may cut into or build up the terrain within those limits.
+- **Side slope 1:** for grading; grading builds cut and embankment slopes outside the footprint.
+- Update check against GitHub releases at start, with release notes, download, in-place install and restart. `DAYZ_NO_UPDATE_CHECK=1` skips the automatic check.
+- P3D mesh reader (MLOD and ODOL) with texture coordinates, and a PAA reader for DXT1, DXT5 and ARGB textures.
+
+### Changed
+- **Grade ASC under the selected route** (formerly under the selected road) designs a profile within the maximum slope, cut and fill instead of following the terrain at part joints, and also grades tracks.
+
+### Fixed
+- Grading on coarse ASC grids no longer leaves a checkerboard of changed cells under the road: every cell that affects the road height is graded, and serpentine legs no longer share averaged cells.
+- The satellite **Visibility** slider label is translated.
+
 ## 2.4.0 — 2026-11-06
 
 ### Added

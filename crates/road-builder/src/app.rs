@@ -8,7 +8,7 @@ use dayz_road_tool::{
     roads::{self, CatalogPart},
     routing,
     terrain::Terrain,
-    tv4p,
+    tv4p, view3d,
 };
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, TextureHandle, Vec2};
 use std::{
@@ -25,6 +25,7 @@ use std::{
 const INK: Color32 = Color32::from_rgb(210, 218, 230);
 const ROAD: Color32 = Color32::from_rgb(92, 182, 236);
 const SELECT: Color32 = Color32::from_rgb(255, 216, 70);
+const TRACK: Color32 = Color32::from_rgb(150, 128, 104);
 
 struct PngSettings {
     width: u32,
@@ -57,13 +58,18 @@ enum Loaded {
     Base(PathBuf, tv4p::Project, Vec<CatalogPart>, Vec<String>),
     Satellite(PathBuf, Raster),
     Terrain(PathBuf, PathBuf, Terrain),
-    Route(usize, Vec<Point>, Vec<roads::PlacedPart>),
+    /// Route index, points, chained pieces and extra objects (level-crossing decks).
+    Route(usize, Vec<Point>, Vec<roads::PlacedPart>, Vec<roads::PlacedPart>),
     Export(PathBuf),
     Shp(Vec<dayz_road_tool::shapefile::Line>, String, String),
-    Graded(PathBuf, Terrain, usize),
+    Graded(PathBuf, Terrain, dayz_road_tool::grading::Report),
     AscExport(PathBuf),
     /// Water areas and river centre lines from SHP, with the river width.
     Water(Vec<Vec<Point>>, Vec<Vec<Point>>, f64),
+    /// Track pieces measured from the models in a folder.
+    Rails(PathBuf, Vec<CatalogPart>, Vec<String>),
+    /// Railway tracks written as Terrain Builder objects: file and object count.
+    RailExport(PathBuf, usize),
 }
 #[derive(Clone)]
 struct Generated {
@@ -183,10 +189,17 @@ pub struct App {
     live_tick: Instant,
     shp_dialog: Option<ShpDialog>,
     obstacles: ObstacleCache,
+    /// Load the track models on the next poll (after a TV4P or project was opened).
+    rails_request: bool,
     show_forbidden: bool,
     water_overlay: Option<(u64, TextureHandle, [f64; 4])>,
     png_settings: PngSettings,
     png_job: Option<Receiver<Result<String>>>,
+    /// The map shows the 3D scene instead of the 2D plan.
+    view3d: bool,
+    scene: view3d::Scene,
+    /// Bumped whenever the road and track previews are rebuilt.
+    preview_epoch: u64,
 }
 impl App {
     fn color_controls(&mut self, ui: &mut egui::Ui) {
@@ -413,7 +426,7 @@ impl App {
         }
     }
     fn initial() -> Self {
-        Self {png_settings: PngSettings::default(),png_job: None,language: Default::default(),doc:Document::default(),file:None,dirty:false,undo:vec![],redo:vec![],base:None,catalog:vec![],lib:Library::new(Document::default().models),warnings:vec![],raster:None,terrain:None,terrain_dir:None,jobs:vec![],center:[207680.,7680.],scale:0.05,tool:Tool::Draw,selected:None,draft:vec![],family:String::new(),model:0,reverse:false,angle:90.,previews:vec![],index:HashMap::new(),tiles:HashMap::new(),tile_age:vec![],status:"Otwórz TV4P, wybierz modele MLOD i wczytaj mapę. Punkty trasy dodajesz kliknięciem.".into(),contours:true,interval:10.,opacity:1.,show_sat:true,show_roads:true,drag_point:None,drag_snapshot:false,contour_cache:vec![],contour_key:None,live_epoch:0,live_job:None,live_candidate:None,live_confirmed:None,live_action:None,live_tick:Instant::now()-Duration::from_secs(1),shp_dialog:None,obstacles:Default::default(),show_forbidden:true,water_overlay:None}
+        Self {png_settings: PngSettings::default(),png_job: None,language: Default::default(),doc:Document::default(),file:None,dirty:false,undo:vec![],redo:vec![],base:None,catalog:vec![],lib:Library::new(Document::default().models),warnings:vec![],raster:None,terrain:None,terrain_dir:None,jobs:vec![],center:[207680.,7680.],scale:0.05,tool:Tool::Draw,selected:None,draft:vec![],family:String::new(),model:0,reverse:false,angle:90.,previews:vec![],index:HashMap::new(),tiles:HashMap::new(),tile_age:vec![],status:"Otwórz TV4P, wybierz modele MLOD i wczytaj mapę. Punkty trasy dodajesz kliknięciem.".into(),contours:true,interval:10.,opacity:1.,show_sat:true,show_roads:true,drag_point:None,drag_snapshot:false,contour_cache:vec![],contour_key:None,live_epoch:0,live_job:None,live_candidate:None,live_confirmed:None,live_action:None,live_tick:Instant::now()-Duration::from_secs(1),shp_dialog:None,obstacles:Default::default(),rails_request:false,show_forbidden:true,water_overlay:None,view3d:false,scene:Default::default(),preview_epoch:0}
     }
     fn checkpoint(&mut self) {
         self.undo.push(self.doc.clone());
@@ -473,6 +486,7 @@ impl App {
             self.doc.terrain_cache = d.terrain_cache;
             self.doc.terrain_origin = d.terrain_origin;
             self.doc.grading_blend_width = d.grading_blend_width;
+            self.doc.grading_side_slope = d.grading_side_slope;
             self.dirty = true;
             self.selected = None;
             self.rebuild();
@@ -516,6 +530,27 @@ impl App {
             Ok(Loaded::Base(path, p, c, w))
         });
     }
+    /// Track pieces from `folder`, or the project's / default track folder.
+    fn load_rails(&mut self, folder: Option<PathBuf>) {
+        let folder = folder
+            .or_else(|| self.doc.rail_models.clone())
+            .unwrap_or_else(|| dayz_road_tool::rails::DEFAULT_FOLDER.into());
+        if !folder.is_dir() {
+            return;
+        }
+        self.start("Odczyt modeli torów", move |_| {
+            let mut lib = Library::new(folder.clone());
+            let (parts, warnings) = dayz_road_tool::rails::catalog(&folder, &mut lib)?;
+            Ok(Loaded::Rails(folder, parts, warnings))
+        });
+    }
+    fn settings_for(&self, family: &str) -> dayz_road_tool::document::RoutingSettings {
+        if dayz_road_tool::rails::is_track_family(family) {
+            self.doc.rail_routing.clone()
+        } else {
+            self.doc.routing.clone()
+        }
+    }
     fn import_sat(&mut self, path: PathBuf) {
         self.start("Import satelity i poziomów powiększenia", move |cancel| {
             let dir = Self::cache_dir("sat")?;
@@ -532,6 +567,9 @@ impl App {
     }
     fn poll(&mut self) {
         self.poll_live();
+        if std::mem::take(&mut self.rails_request) {
+            self.load_rails(None);
+        }
         let mut done = Vec::new();
         for (i, j) in self.jobs.iter().enumerate() {
             match j.rx.try_recv() {
@@ -554,8 +592,16 @@ impl App {
                     self.clear_live();
                     self.doc.base = Some(path);
                     self.base = Some(p);
+                    // Track pieces do not come from the TV4P; keep them.
+                    let tracks: Vec<_> = self
+                        .catalog
+                        .drain(..)
+                        .filter(|p| dayz_road_tool::rails::is_track_family(&p.family))
+                        .collect();
                     self.catalog = c;
+                    self.catalog.extend(tracks);
                     self.warnings = w;
+                    self.rails_request = !self.catalog.iter().any(|p| dayz_road_tool::rails::is_track_family(&p.family));
                     self.lib = Library::new(self.doc.models.clone());
                     self.family = self
                         .catalog
@@ -600,7 +646,7 @@ impl App {
                         "ASC gotowy. Współrzędne pochodzą z nagłówka; można je dopasować w panelu."
                             .into();
                 }
-                Ok(Loaded::Graded(dir, t, count)) => {
+                Ok(Loaded::Graded(dir, t, report)) => {
                     self.checkpoint();
                     self.clear_live();
                     self.live_epoch = self.live_epoch.wrapping_add(1);
@@ -610,17 +656,19 @@ impl App {
                     self.terrain = Some(t);
                     self.contour_key = None;
                     self.status = format!(
-                        "Zmieniono {count} komórek ASC pod partami. Ctrl+Z cofa operację. Zapisz wynik przyciskiem Eksport ASC."
+                        "Zmieniono {} komórek ASC pod trasą (nasyp do {:.1} m, wykop do {:.1} m). Ctrl+Z cofa operację. Zapisz wynik przyciskiem Eksport ASC.",
+                        report.changed, report.fill, report.cut
                     );
                 }
                 Ok(Loaded::AscExport(path)) => {
                     self.status = format!("Zapisano zmodyfikowany teren: {}", path.display())
                 }
-                Ok(Loaded::Route(index, points, parts)) => {
+                Ok(Loaded::Route(index, points, parts, extras)) => {
                     if index < self.doc.routes.len() {
                         self.checkpoint();
                         self.doc.routes[index].points = points;
                         self.doc.routes[index].parts = parts;
+                        self.doc.routes[index].extras = extras;
                         self.rebuild();
                         self.status = "Trasa wyznaczona i złożona z modeli".into();
                     }
@@ -630,6 +678,32 @@ impl App {
                         "Zapisano {}. Sprawdź wynik w Terrain Builder.",
                         path.display()
                     )
+                }
+                Ok(Loaded::Rails(folder, parts, warnings)) => {
+                    if self.doc.rail_models.as_ref() != Some(&folder) {
+                        self.doc.rail_models = Some(folder);
+                        self.dirty = true;
+                    }
+                    let families: BTreeSet<_> = parts.iter().map(|p| p.family.clone()).collect();
+                    self.catalog.retain(|p| !dayz_road_tool::rails::is_track_family(&p.family));
+                    let count = parts.len();
+                    self.catalog.extend(parts);
+                    self.warnings.extend(warnings);
+                    if self.family.is_empty() {
+                        self.family = families.iter().next().cloned().unwrap_or_default();
+                    }
+                    self.live_epoch = self.live_epoch.wrapping_add(1);
+                    self.status = format!(
+                        "Wczytano {count} modeli torów: {}",
+                        families.into_iter().collect::<Vec<_>>().join(", ")
+                    );
+                    self.rebuild();
+                }
+                Ok(Loaded::RailExport(path, count)) => {
+                    self.status = format!(
+                        "Zapisano {count} obiektów torów do {}. Zaimportuj plik w Terrain Builder (Import objects).",
+                        path.display()
+                    );
                 }
                 Ok(Loaded::Water(areas, lines, width)) => {
                     self.checkpoint();
@@ -665,7 +739,7 @@ impl App {
                             family: family.clone(),
                             points: line.points,
                             parts: vec![],
-                            replaces: None,
+                            replaces: None, rail: dayz_road_tool::rails::is_track_family(&family), extras: vec![],
                         });
                     }
                     self.selected = Some(Selection::Route(first));
@@ -690,6 +764,7 @@ impl App {
         self.contour_key = None;
         self.previews.clear();
         self.index.clear();
+        self.preview_epoch += 1;
         if let Some(base) = self.base.clone() {
             for r in &base.roads {
                 if self.doc.deleted.contains(&r.id)
@@ -731,7 +806,12 @@ impl App {
         // Avoid borrowing the document while updating spatial bins.
         let routes = self.doc.routes.clone();
         for (i, r) in routes.iter().enumerate() {
-            if let Ok(s) = roads::shape(&r.parts, &mut self.lib) {
+            if let Ok(mut s) = roads::shape(&r.parts, &mut self.lib) {
+                for e in &r.extras {
+                    if let Ok(m) = self.lib.model(&e.model) {
+                        s.place(&m, -e.rotation.to_radians(), e.position);
+                    }
+                }
                 self.push_preview(Selection::Route(i), s, r.family.clone());
             }
         }
@@ -833,6 +913,7 @@ impl App {
                     if let Some(p) = self.doc.base.clone() {
                         self.load_base(p);
                     }
+                    self.load_rails(None);
                     self.raster = self
                         .doc
                         .satellite_cache
@@ -889,10 +970,44 @@ impl App {
             family: self.family.clone(),
             points: std::mem::take(&mut self.draft),
             parts: vec![],
-            replaces: None,
+            replaces: None, rail: dayz_road_tool::rails::is_track_family(&self.family), extras: vec![],
         });
         self.selected = Some(Selection::Route(index));
         self.status = "Trasa zapisana. Dopasuj modele lub uruchom automat.".into();
+    }
+    /// Centre lines of the roads on the map (base TV4P and project roads) with half widths
+    /// estimated from their footprints, for level crossings.
+    fn road_lines(&self) -> Vec<dayz_road_tool::rails::RoadLine> {
+        let mut lines = Vec::new();
+        for (road, p) in self.previews.iter().enumerate() {
+            if let Selection::Route(i) = p.id
+                && self.doc.routes.get(i).is_none_or(|r| r.rail)
+            {
+                continue;
+            }
+            let area: f64 = p
+                .shape
+                .triangles
+                .iter()
+                .map(|t| ((t[1][0] - t[0][0]) * (t[2][1] - t[0][1]) - (t[2][0] - t[0][0]) * (t[1][1] - t[0][1])).abs() / 2.)
+                .sum();
+            let length: f64 = p.shape.lines.iter().flat_map(|l| l.windows(2)).map(|w| geometry::norm(geometry::sub(w[1], w[0]))).sum();
+            let half_width = if length > 1. { (area / length / 2.).clamp(2., 12.) } else { 4. };
+            lines.extend(
+                p.shape
+                    .lines
+                    .iter()
+                    .filter(|l| l.len() >= 2)
+                    .map(|l| dayz_road_tool::rails::RoadLine { points: l.clone(), half_width, road }),
+            );
+        }
+        lines
+    }
+    fn crossing_input(&self) -> (Vec<dayz_road_tool::rails::RoadLine>, PathBuf) {
+        (
+            self.road_lines(),
+            self.doc.rail_models.clone().unwrap_or_else(|| dayz_road_tool::rails::DEFAULT_FOLDER.into()),
+        )
     }
     fn obstacle_input(&self) -> ObstacleInput {
         use std::hash::{Hash, Hasher};
@@ -926,9 +1041,14 @@ impl App {
             return;
         };
         let route = self.doc.routes[index].clone();
-        let settings = self.doc.routing.clone();
+        let settings = if route.rail {
+            self.doc.rail_routing.clone()
+        } else {
+            self.doc.routing.clone()
+        };
         let catalog = self.catalog.clone();
         let obstacles = self.obstacle_input();
+        let (roads_near, rail_folder) = self.crossing_input();
         let dir = self.terrain_dir.clone();
         let meta = self.terrain.as_ref().map(|t| t.meta.clone());
         self.start(
@@ -945,7 +1065,12 @@ impl App {
                     t
                 });
                 let forbidden = obstacles.get(terrain.as_ref(), &cancel)?;
-                let parts = if automatic {
+                let crossings = if route.rail {
+                    dayz_road_tool::rails::Crossings::new(roads_near, &route.family, &catalog, &rail_folder)
+                } else {
+                    dayz_road_tool::rails::Crossings::none()
+                };
+                let planned = if automatic {
                     // The terrain route already respects the minimum radius and passes
                     // through every waypoint; it is fitted without rounding it again.
                     routing::plan(
@@ -957,20 +1082,24 @@ impl App {
                         &catalog,
                         &settings,
                         &forbidden,
+                        &crossings,
                         &cancel,
                     )?
                 } else {
-                    roads::fit(&route.points, &route.family, &catalog, &settings, |a, b| {
+                    let mut parts = roads::fit(&route.points, &route.family, &catalog, &settings, |a, b| {
                         !cancel.load(Ordering::Relaxed)
                             && terrain
                                 .as_ref()
                                 .map(|t| routing::permitted(a, b, t, &settings, &forbidden))
                                 .unwrap_or_else(|| !forbidden.segment_blocked(a, b, 0.))
-                    })?
+                    })?;
+                    // Hand-placed tracks also get their level crossings.
+                    let extras = crossings.apply(&mut parts, &catalog)?;
+                    routing::Planned { parts, extras }
                 };
                 ensure!(!cancel.load(Ordering::Relaxed), "Anulowano");
                 // Keep the user's waypoints editable; the fitted models carry the terrain route.
-                Ok(Loaded::Route(index, route.points.clone(), parts))
+                Ok(Loaded::Route(index, route.points.clone(), planned.parts, planned.extras))
             },
         );
     }
@@ -982,6 +1111,7 @@ impl App {
         let route = &mut self.doc.routes[index];
         route.points.insert(segment + 1, point);
         route.parts.clear();
+        route.extras.clear();
         self.rebuild();
     }
 
@@ -993,9 +1123,71 @@ impl App {
         let route = &mut self.doc.routes[index];
         route.points.remove(point);
         route.parts.clear();
+        route.extras.clear();
         self.rebuild();
     }
 
+    fn export_rails(&mut self) {
+        let lang = self.language;
+        let tracks: Vec<_> = self.doc.routes.iter().filter(|r| r.rail).cloned().collect();
+        if tracks.is_empty() {
+            self.status = "Brak torowisk do eksportu".into();
+            return;
+        }
+        if tracks.iter().any(|r| r.parts.is_empty()) {
+            self.status = "Dopasuj modele do wszystkich torowisk przed eksportem".into();
+            return;
+        }
+        let Some(out) = rfd::FileDialog::new()
+            .add_filter(lang.tr("Obiekty Terrain Builder"), &["txt"])
+            .set_file_name("rails-objects.txt")
+            .save_file()
+        else {
+            return;
+        };
+        let catalog = self.catalog.clone();
+        let settings = self.doc.rail_routing.clone();
+        let obstacles = self.obstacle_input();
+        let (roads_near, rail_folder) = self.crossing_input();
+        let dir = self.terrain_dir.clone();
+        let meta = self.terrain.as_ref().map(|t| t.meta.clone());
+        self.start("Eksport torów", move |cancel| {
+            let terrain = dir.map(|d| Terrain::open(&d)).transpose()?.map(|mut t| {
+                if let Some(m) = meta {
+                    t.meta = m;
+                }
+                t
+            });
+            let forbidden = obstacles.get(terrain.as_ref(), &cancel)?;
+            for route in &tracks {
+                let line = roads::centerline(&route.parts, &catalog);
+                for w in line.windows(2) {
+                    ensure!(!cancel.load(Ordering::Relaxed), "Anulowano eksport");
+                    ensure!(
+                        terrain
+                            .as_ref()
+                            .map(|t| routing::permitted(w[0], w[1], t, &settings, &forbidden))
+                            .unwrap_or_else(|| !forbidden.segment_blocked(w[0], w[1], 0.)),
+                        "Torowisko {} przecina obszar zakazany lub nie spełnia ograniczeń ASC",
+                        route.name
+                    );
+                }
+            }
+            // Crossings follow the pieces as they are now, also after manual edits.
+            let mut tracks = tracks;
+            for route in &mut tracks {
+                let crossings = dayz_road_tool::rails::Crossings::new(roads_near.clone(), &route.family, &catalog, &rail_folder);
+                route.extras = crossings
+                    .apply(&mut route.parts, &catalog)
+                    .with_context(|| format!("Torowisko {}", route.name))?;
+            }
+            let refs: Vec<_> = tracks.iter().collect();
+            let text = dayz_road_tool::rails::objects(&refs)?;
+            let count = text.lines().count();
+            dayz_road_tool::storage::atomic_write(&out, text.as_bytes())?;
+            Ok(Loaded::RailExport(out, count))
+        });
+    }
     fn export(&mut self) {
         let lang = self.language;
         if self.tool == Tool::Live && !self.draft.is_empty() {
@@ -1005,7 +1197,7 @@ impl App {
                 return;
             }
         }
-        if self.doc.routes.iter().any(|r| r.parts.is_empty()) {
+        if self.doc.routes.iter().any(|r| !r.rail && r.parts.is_empty()) {
             self.status = "Dopasuj modele do wszystkich tras przed eksportem".into();
             return;
         }
@@ -1034,7 +1226,7 @@ impl App {
                         t
                     });
                 let forbidden = obstacles.get(terrain.as_ref(), &cancel)?;
-                for route in &d.routes {
+                for route in d.routes.iter().filter(|r| !r.rail) {
                     let line = roads::centerline(&route.parts, &c);
                     for w in line.windows(2) {
                         ensure!(!cancel.load(Ordering::Relaxed), "Anulowano eksport");
@@ -1083,6 +1275,7 @@ impl App {
                 if ui.button(lang.tr("Otwórz projekt")).clicked(){if self.dirty && !rfd::MessageDialog::new().set_title(lang.tr("Niezapisane zmiany")).set_description(lang.tr("Odrzucić niezapisane zmiany i otworzyć projekt?")).set_buttons(rfd::MessageButtons::YesNo).show().eq(&rfd::MessageDialogResult::Yes) {}else{self.open();}}
                 if ui.button(lang.tr("Zapisz projekt")).clicked(){self.save();}
 if ui.button(lang.tr("Eksport TV4P")).clicked(){self.export();}
+if ui.button(lang.tr("Eksport torów TB…")).on_hover_text(lang.tr("Torowiska jako obiekty do importu w Terrain Builder (File › Import › Objects)")).clicked(){self.export_rails();}
                 ui.separator();if ui.button(lang.tr("Cofnij")).on_hover_text(lang.tr("Cofnij · Ctrl+Z")).clicked(){self.undo(false);}
 if ui.button(lang.tr("Ponów")).on_hover_text(lang.tr("Ponów · Ctrl+Y")).clicked(){self.undo(true);}
             });
@@ -1115,6 +1308,7 @@ if ui.button(lang.tr("Ponów")).on_hover_text(lang.tr("Ponów · Ctrl+Y")).click
             ui.small(lang.tr(&(self.doc.models.display().to_string())));
             let families:BTreeSet<_>=self.catalog.iter().map(|p|p.family.clone()).collect();egui::ComboBox::from_label(lang.tr("Typ")).selected_text(lang.tr(&self.family)).show_ui(ui,|ui|{for f in families {ui.selectable_value(&mut self.family,f.clone(),lang.tr(&(f)));}});
             if ui.button(lang.tr("Import dróg SHP…")).clicked() && let Some(path)=rfd::FileDialog::new().add_filter(lang.tr("Shapefile"),&["shp"]).pick_file(){let projection=std::fs::read_to_string(path.with_extension("prj")).ok().map(|p|p.chars().take(4000).collect());self.shp_dialog=Some(ShpDialog{path,offset:[0.,0.],family:self.family.clone(),projection,water:None});}
+            if ui.button(lang.tr("Modele torów…")).on_hover_text(lang.tr("Folder z modelami Rail_Track*.p3d (domyślnie P:\\dz\\structures\\rail\\Tracks)")).clicked() && let Some(folder)=rfd::FileDialog::new().pick_folder(){self.load_rails(Some(folder));}
             if self.tool==Tool::Segments {
                 egui::ComboBox::from_label(lang.tr("Model")).selected_text(lang.tr(self.catalog.get(self.model).map(|p|p.path.rsplit(['\\','/']).next().unwrap_or("")).unwrap_or("Brak MLOD"))).show_ui(ui,|ui|{for (i,p) in self.catalog.iter().enumerate().filter(|(_,p)|p.family==self.family) {ui.selectable_value(&mut self.model,i,lang.tr(p.path.rsplit(['\\','/']).next().unwrap_or("") ));}});
                 ui.checkbox(&mut self.reverse,lang.tr("Odwróć zakręt"));ui.horizontal(|ui|{ui.label(lang.tr("Kierunek startu °"));ui.add(egui::DragValue::new(&mut self.angle).speed(1.));});ui.small(lang.tr("Kliknij początek. Kolejne segmenty dodasz przyciskiem."));
@@ -1133,10 +1327,10 @@ if ui.button(lang.tr("Usuń ostatni punkt")).clicked(){self.draft.pop();self.cle
             if let Some(Selection::Route(i))=self.selected {
                 if ui.button(lang.tr("Edytuj punkty")).clicked(){self.tool=Tool::Edit;self.draft.clear();self.clear_live();}
                 if let Some(r)=self.doc.routes.get_mut(i) && ui.text_edit_singleline(&mut r.name).changed(){self.dirty=true;}
-if ui.button(lang.tr("Ustaw typ wybranej trasy")).clicked(){self.checkpoint();self.doc.routes[i].family=self.family.clone();self.doc.routes[i].parts.clear();self.rebuild();}
+if ui.button(lang.tr("Ustaw typ wybranej trasy")).clicked(){self.checkpoint();self.doc.routes[i].family=self.family.clone();self.doc.routes[i].rail=dayz_road_tool::rails::is_track_family(&self.family);self.doc.routes[i].parts.clear();self.doc.routes[i].extras.clear();self.rebuild();}
                 if ui.button(lang.tr("Dopasuj modele do punktów")).clicked(){self.generate(false);}
 if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true);}
-                if ui.button(lang.tr("Usuń ostatni segment")).clicked(){self.checkpoint();self.doc.routes[i].parts.pop();self.rebuild();}
+                if ui.button(lang.tr("Usuń ostatni segment")).clicked(){self.checkpoint();self.doc.routes[i].parts.pop();self.doc.routes[i].extras.clear();self.rebuild();}
             }
             if let Some(Selection::Existing(id))=self.selected {ui.label(lang.tr(&(format!("Droga TV4P #{id}"))));ui.small(lang.tr("Przeciągnij drogę w trybie Wybierz, aby ją przesunąć."));if ui.button(lang.tr("Obróć o 5°")).clicked(){self.checkpoint();if let Some(t)=self.doc.transforms.iter_mut().find(|t|t.0==id){t.2+=5.;}else{self.doc.transforms.push((id,[0.,0.],5.));}self.rebuild();}}
             if self.selected.is_some() && ui.button(lang.tr("Usuń wybraną drogę")).clicked(){self.delete();}
@@ -1165,7 +1359,7 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
                             self.import_asc(p);
                         }
                         ui.checkbox(&mut self.show_sat,lang.tr("Satelita"));
-                        ui.add(egui::Slider::new(&mut self.opacity, 0.0..=1.0).text("Widoczność"));
+                        ui.add(egui::Slider::new(&mut self.opacity, 0.0..=1.0).text(lang.tr("Widoczność")));
                         ui.checkbox(&mut self.show_roads,lang.tr("Modele dróg"));
                         ui.checkbox(&mut self.contours,lang.tr("Poziomice"));
                         ui.checkbox(&mut self.show_forbidden,lang.tr("Obszary zakazane"));
@@ -1237,7 +1431,7 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
                         }
                         ui.separator();
                         ui.heading(lang.tr("Teren pod partami"));
-                        ui.small(lang.tr("Płynny profil pod drogą i łagodne przejście do otaczającego terenu. Szerokość liczona od krawędzi partów; 0 m zmienia tylko obrys MLOD."));
+                        ui.small(lang.tr("Niweleta drogi lub toru w granicach spadku maks. oraz wykopu i nasypu maks. z ograniczeń trasy; poza obrysem skarpy nasypów i wykopów. Wygładzanie łagodzi pobocza."));
                         ui.horizontal(|ui| {
                             ui.label(lang.tr("Szerokość wygładzania z każdej strony [m]"));
                             let mut width = self.doc.grading_blend_width;
@@ -1246,29 +1440,45 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
                                 self.doc.grading_blend_width = width;
                             }
                         });
+                        ui.horizontal(|ui| {
+                            ui.label(lang.tr("Nachylenie skarp 1:"));
+                            let mut slope = self.doc.grading_side_slope;
+                            if ui.add(egui::DragValue::new(&mut slope).range(0.5..=10.).speed(0.05)).on_hover_text(lang.tr("Metry w poziomie na 1 m wysokości nasypu lub głębokości wykopu")).changed() {
+                                self.checkpoint();
+                                self.doc.grading_side_slope = slope;
+                            }
+                        });
                         let can_grade = self.terrain.is_some() && self.draft.is_empty() && matches!(self.selected, Some(Selection::Route(i)) if !self.doc.routes[i].parts.is_empty());
-                        if ui.add_enabled(can_grade, egui::Button::new("Dopasuj ASC pod wybraną drogą")).clicked() { self.grade_asc(); }
-                        if ui.add_enabled(self.terrain.is_some(), egui::Button::new("Eksport ASC…")).clicked() { self.export_asc(); }
+                        if ui.add_enabled(can_grade, egui::Button::new(lang.tr("Dopasuj ASC pod wybraną trasą"))).clicked() { self.grade_asc(); }
+                        if ui.add_enabled(self.terrain.is_some(), egui::Button::new(lang.tr("Eksport ASC…"))).clicked() { self.export_asc(); }
                         ui.small(lang.tr("Ctrl+Z cofa modyfikację terenu. Źródłowy ASC pozostaje zachowany."));
                         ui.separator();
-                        ui.heading(lang.tr("Ograniczenia drogi"));
-                        let s = &mut self.doc.routing;
-                        for (label, value, range) in [
-                            ("Spadek maks. %", &mut s.max_grade, 0.1..=100.),
-                            ("Kara za spadek", &mut s.slope_weight, 0.0..=100.),
-                            ("Krok automatu m", &mut s.cell, 1.0..=500.),
-                            ("Promień min. m", &mut s.min_radius, 1.0..=2000.),
-                            ("Tolerancja trasy m", &mut s.tolerance, 0.1..=100.),
-                        ] {
-                            ui.horizontal(|ui| {
-                                ui.label(lang.tr(label));
-                                if ui
-                                    .add(egui::DragValue::new(value).range(range).speed(0.5))
-                                    .changed()
-                                {
-                                    self.dirty = true;
-                                }
-                            });
+                        for (heading, rail) in [("Ograniczenia drogi", false), ("Ograniczenia torowiska", true)] {
+                            ui.heading(lang.tr(heading));
+                            let s = if rail { &mut self.doc.rail_routing } else { &mut self.doc.routing };
+                            for (label, value, range) in [
+                                ("Spadek maks. %", &mut s.max_grade, 0.1..=100.),
+                                ("Kara za spadek", &mut s.slope_weight, 0.0..=100.),
+                                ("Krok automatu m", &mut s.cell, 1.0..=500.),
+                                ("Promień min. m", &mut s.min_radius, 1.0..=2000.),
+                                ("Tolerancja trasy m", &mut s.tolerance, 0.1..=100.),
+                                ("Wykop maks. m", &mut s.max_cut, 0.0..=100.),
+                                ("Nasyp maks. m", &mut s.max_fill, 0.0..=100.),
+                                ("Kara za roboty ziemne", &mut s.earth_weight, 0.0..=100.),
+                            ] {
+                                ui.horizontal(|ui| {
+                                    ui.label(lang.tr(label));
+                                    if ui
+                                        .add(egui::DragValue::new(value).range(range).speed(0.5))
+                                        .changed()
+                                    {
+                                        self.dirty = true;
+                                    }
+                                });
+                            }
+                            if rail {
+                                ui.small(lang.tr("Dotyczy tras typu Rail_Track*. Łuk 10° / 25 m ma promień ok. 143 m; dla Rail_TrackSmall zmniejsz promień min. do ok. 20 m."));
+                            }
                         }
                     });
                     ui.separator();
@@ -1313,6 +1523,7 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
             Ok(()) => {
                 self.checkpoint();
                 self.doc.routes[i].parts = parts;
+                self.doc.routes[i].extras.clear();
                 self.rebuild();
             }
             Err(e) => self.status = e.to_string(),
@@ -1332,6 +1543,7 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
             points,
             &self.family,
             &self.doc.routing,
+            &self.doc.rail_routing,
             &self.doc.forbidden,
             &self.doc.forbidden_lines,
             &self.doc.water,
@@ -1350,7 +1562,7 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
         let input = points.clone();
         let family = self.family.clone();
         let catalog = self.catalog.clone();
-        let settings = self.doc.routing.clone();
+        let settings = self.settings_for(&family);
         let obstacles = self.obstacle_input();
         let dir = self.terrain_dir.clone();
         let meta = self.terrain.as_ref().map(|t| t.meta.clone());
@@ -1448,7 +1660,7 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
             family: self.family.clone(),
             points: std::mem::take(&mut self.draft),
             parts: g.parts,
-            replaces: None,
+            replaces: None, rail: dayz_road_tool::rails::is_track_family(&self.family), extras: vec![],
         });
         self.selected = Some(Selection::Route(i));
         self.clear_live();
@@ -1706,13 +1918,22 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
         let catalog = self.catalog.clone();
         self.clear_live();
         let blend_width = self.doc.grading_blend_width;
+        // The road or track profile keeps the route's own limits.
+        let s = if self.doc.routes[i].rail { &self.doc.rail_routing } else { &self.doc.routing };
+        let earthwork = dayz_road_tool::grading::Earthwork {
+            max_grade: s.max_grade,
+            max_cut: s.max_cut,
+            max_fill: s.max_fill,
+            side_slope: self.doc.grading_side_slope,
+        };
         self.start("Modyfikacja ASC pod partami", move |cancel| {
             let mut terrain = Terrain::open(&dir)?;
             terrain.meta = meta;
             let output = Self::cache_dir("asc-graded")?;
-            let (t, count) =
-                dayz_road_tool::grading::apply_with_blend(&terrain, &parts, &catalog, &output, &cancel, blend_width)?;
-            Ok(Loaded::Graded(output, t, count))
+            let (t, report) = dayz_road_tool::grading::apply_earthwork(
+                &terrain, &parts, &catalog, &output, &cancel, blend_width, &earthwork,
+            )?;
+            Ok(Loaded::Graded(output, t, report))
         });
     }
     fn export_asc(&mut self) {
@@ -2032,7 +2253,7 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
                             family: self.family.clone(),
                             points: vec![world],
                             parts: vec![],
-                            replaces: None,
+                            replaces: None, rail: dayz_road_tool::rails::is_track_family(&self.family), extras: vec![],
                         });
                         self.selected = Some(Selection::Route(i));
                         self.add_segment();
@@ -2110,11 +2331,12 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
                         if let Some(p) = self.drag_point {
                             r.points[p] = geometry::add(r.points[p], d);
                             r.parts.clear();
+                            r.extras.clear();
                         } else {
                             for p in &mut r.points {
                                 *p = geometry::add(*p, d);
                             }
-                            for p in &mut r.parts {
+                            for p in r.parts.iter_mut().chain(&mut r.extras) {
                                 p.position = geometry::add(p.position, d);
                             }
                         }
@@ -2360,7 +2582,12 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
             for y in y0..=y1 {
                 let key = (level, x, y);
                 if let std::collections::hash_map::Entry::Vacant(entry) = self.tiles.entry(key) {
-                    if loaded >= 2 {
+                    // Screenshots need every tile in their first frames.
+                    #[cfg(feature = "ui-screenshot")]
+                    let limit = if std::env::var_os("EFRAME_SCREENSHOT_TO").is_some() { usize::MAX } else { 2 };
+                    #[cfg(not(feature = "ui-screenshot"))]
+                    let limit = 2;
+                    if loaded >= limit {
                         ui.ctx().request_repaint();
                         continue;
                     }
@@ -2444,9 +2671,261 @@ impl App {
         }
         self.controls(ctx);
         egui::CentralPanel::default().show(ctx, |ui| {
-            self.map(ui);
+            let full = ui.max_rect();
+            if self.view3d {
+                self.scene_view(ui);
+            } else {
+                self.map(ui);
+            }
+            self.view_switch(ui, full);
         });
         self.import_shp_dialog(ctx);
+    }
+}
+impl App {
+    fn scene_source(&self) -> view3d::Source<'_> {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        self.preview_epoch.hash(&mut h);
+        self.selected.hash(&mut h);
+        serde_json::to_string(&self.doc.road_colors).unwrap_or_default().hash(&mut h);
+        view3d::Source {
+            terrain: self.terrain.as_ref(),
+            terrain_dir: self.terrain_dir.as_deref(),
+            raster: self.raster.as_ref(),
+            map: &self.doc.map,
+            water_level: self.doc.water.level,
+            roads_key: h.finish(),
+        }
+    }
+
+    /// Colour of a road or track preview, as on the 2D map.
+    fn preview_color(&self, p: &Preview) -> Color32 {
+        if self.selected == Some(p.id) {
+            SELECT
+        } else if let Some(rgb) = self.doc.road_colors.get(&p.family) {
+            Color32::from_rgb(rgb[0], rgb[1], rgb[2])
+        } else if dayz_road_tool::rails::is_track_family(&p.family) {
+            TRACK
+        } else {
+            ROAD
+        }
+    }
+
+    /// Road and track footprints overlapping `region`, coloured as on the 2D map.
+    fn road_items(&self) -> Vec<view3d::RoadItem> {
+        self.previews
+            .iter()
+            .map(|p| {
+                let c = self.preview_color(p);
+                view3d::RoadItem {
+                    triangles: p.shape.triangles.clone(),
+                    color: [c.r(), c.g(), c.b()],
+                    placements: p.shape.placements.clone(),
+                    rigid: dayz_road_tool::rails::is_track_family(&p.family),
+                    highlight: self.selected == Some(p.id),
+                }
+            })
+            .collect()
+    }
+
+    /// Screenshot builds only: loads data named by environment variables and builds the
+    /// 3D scene before the first frame.
+    #[cfg(feature = "ui-screenshot")]
+    pub fn screenshot_scene(&mut self) {
+        let var = |k: &str| std::env::var(k).ok();
+        let nums = |k: &str| {
+            var(k).map(|s| s.split(',').filter_map(|v| v.trim().parse::<f64>().ok()).collect::<Vec<_>>())
+        };
+        if let Some(m) = nums("DAYZ_SCREENSHOT_MAP")
+            && m.len() == 4
+        {
+            self.doc.map = dayz_road_tool::document::MapSettings { east: m[0], north: m[1], width: m[2], height: m[3] };
+        }
+        if let Some(dir) = var("DAYZ_SCREENSHOT_ASC")
+            && let Ok(t) = Terrain::open(std::path::Path::new(&dir))
+        {
+            self.doc.terrain_origin = Some([t.meta.east, t.meta.north]);
+            self.terrain_dir = Some(dir.into());
+            self.terrain = Some(t);
+        }
+        if let Some(dir) = var("DAYZ_SCREENSHOT_SAT") {
+            self.raster = Raster::open(std::path::Path::new(&dir)).ok();
+        }
+        if let Some(path) = var("DAYZ_SCREENSHOT_TV4P") {
+            let mut lib = Library::new(self.doc.models.clone());
+            self.base = tv4p::load(std::path::Path::new(&path), &mut lib).ok();
+        }
+        if let Some(w) = nums("DAYZ_SCREENSHOT_WATER")
+            && let Some(level) = w.first()
+        {
+            self.doc.water.level = *level;
+        }
+        if let Some(t) = nums("DAYZ_SCREENSHOT_TRACK")
+            && t.len() >= 4
+            && let Some(terrain) = &self.terrain
+        {
+            let folder = std::path::Path::new(dayz_road_tool::rails::DEFAULT_FOLDER);
+            let mut lib = Library::new(folder.into());
+            if let Ok((parts, _)) = dayz_road_tool::rails::catalog(folder, &mut lib) {
+                self.catalog.extend(parts);
+                let points: Vec<Point> = t.chunks(2).filter(|c| c.len() == 2).map(|c| [c[0], c[1]]).collect();
+                let s = dayz_road_tool::document::RoutingSettings { max_grade: 6., ..dayz_road_tool::document::RoutingSettings::rail() };
+                match routing::plan(terrain, &points, "Rail_TrackE", &self.catalog, &s, &routing::Obstacles::none(), &dayz_road_tool::rails::Crossings::none(), &AtomicBool::new(false)) {
+                    Ok(planned) => self.doc.routes.push(Route {
+                        name: "Railway".into(),
+                        family: "Rail_TrackE".into(),
+                        points,
+                        parts: planned.parts,
+                        replaces: None,
+                        rail: true,
+                        extras: planned.extras,
+                    }),
+                    Err(e) => eprintln!("track: {e:#}"),
+                }
+            }
+        }
+        self.rebuild();
+        self.view3d = true;
+        let extent = self.scene_source().extent();
+        let camera = nums("DAYZ_SCREENSHOT_CAMERA").filter(|c| c.len() == 5);
+        match (&camera, extent) {
+            (Some(c), _) => {
+                let half = c[4];
+                self.scene.enter(view3d::Region { min: [c[0] - half, c[1] - half], max: [c[0] + half, c[1] + half] }, extent);
+                if let Some(cam) = &mut self.scene.camera {
+                    cam.target = [c[0], c[1]];
+                    cam.yaw = c[2].to_radians() as f32;
+                    cam.pitch = c[3].to_radians() as f32;
+                    cam.distance = c[4] as f32;
+                }
+            }
+            (None, Some(e)) => self.scene.enter(e, extent),
+            _ => {}
+        }
+        // DAYZ_SCREENSHOT_2D shows the plan at the camera target instead, `distance` metres across.
+        if var("DAYZ_SCREENSHOT_2D").is_some() {
+            self.view3d = false;
+            if let Some(c) = &camera {
+                self.center = [c[0], c[1]];
+                self.scale = 900. / c[4];
+            }
+            return;
+        }
+        let aspect = nums("DAYZ_SCREENSHOT_ASPECT").and_then(|a| a.first().copied()).unwrap_or(1.1) as f32;
+        let mut scene = std::mem::take(&mut self.scene);
+        scene.settle(&self.scene_source(), aspect, || self.road_items());
+        self.scene = scene;
+    }
+
+    /// 2D / 3D switch in the top right corner of the map.
+    fn view_switch(&mut self, ui: &mut egui::Ui, full: Rect) {
+        let lang = self.language;
+        let rect = Rect::from_min_size(Pos2::new(full.right() - 104., full.top() + 10.), Vec2::new(94., 30.));
+        let mut want = self.view3d;
+        ui.put(rect, |ui: &mut egui::Ui| {
+            egui::Frame::popup(ui.style())
+                .inner_margin(egui::Margin::symmetric(6, 3))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.selectable_value(&mut want, false, "2D").on_hover_text(lang.tr("Widok mapy z góry"));
+                        ui.selectable_value(&mut want, true, "3D").on_hover_text(lang.tr("Widok terenu 3D z satelitą, wodą, drogami i torami"));
+                    });
+                })
+                .response
+        });
+        if want != self.view3d {
+            if want {
+                let sw = self.world(full.left_bottom(), full);
+                let ne = self.world(full.right_top(), full);
+                let extent = self.scene_source().extent();
+                self.scene.enter(view3d::Region { min: sw, max: ne }, extent);
+            } else if let Some(c) = &self.scene.camera {
+                // The plan opens where the 3D camera was looking.
+                self.center = c.target;
+            }
+            self.view3d = want;
+        }
+    }
+
+    fn scene_view(&mut self, ui: &mut egui::Ui) {
+        let lang = self.language;
+        let (rect, response) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
+        let painter = ui.painter_at(rect);
+        painter.rect_filled(rect, 0., Color32::from_rgb(34, 48, 68));
+        let mut scene = std::mem::take(&mut self.scene);
+        let source = self.scene_source();
+        let extent = source.extent();
+        scene.input(ui, &response);
+        scene.update(&source, rect.width() / rect.height().max(1.), || self.road_items());
+        scene.paint(ui, rect, &source);
+        let has_satellite = self.raster.is_some() && self.doc.map.valid();
+        if extent.is_none() {
+            painter.text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                lang.tr("Wczytaj teren ASC lub satelitę, aby zobaczyć widok 3D."),
+                egui::FontId::proportional(18.),
+                INK,
+            );
+        }
+        if scene.building() {
+            ui.ctx().request_repaint_after(Duration::from_millis(100));
+            painter.text(
+                rect.left_bottom() + Vec2::new(12., -14.),
+                egui::Align2::LEFT_BOTTOM,
+                lang.tr("Budowanie widoku 3D…"),
+                egui::FontId::proportional(14.),
+                INK,
+            );
+        }
+        if let Some(e) = scene.error.clone().or_else(|| scene.gpu_error()) {
+            painter.text(
+                rect.center_bottom() + Vec2::new(0., -40.),
+                egui::Align2::CENTER_BOTTOM,
+                lang.tr(&e),
+                egui::FontId::proportional(14.),
+                Color32::from_rgb(240, 130, 120),
+            );
+        }
+        let panel = Rect::from_min_size(rect.min + Vec2::new(10., 10.), Vec2::new(280., 300.));
+        ui.scope_builder(egui::UiBuilder::new().max_rect(panel), |ui| {
+            egui::Frame::popup(ui.style())
+                .show(ui, |ui| {
+                    ui.set_width(250.);
+                    ui.strong(lang.tr("Widok 3D"));
+                    ui.add_enabled(has_satellite, egui::Checkbox::new(&mut scene.show_satellite, lang.tr("Satelita")))
+                        .on_hover_text(lang.tr("Bez satelity teren jest kolorowany według wysokości"));
+                    ui.checkbox(
+                        &mut scene.show_water,
+                        lang.tr(&format!("Woda (poziom {:.1} m)", self.doc.water.level)),
+                    );
+                    ui.checkbox(&mut scene.show_roads, lang.tr("Drogi i tory"));
+                    ui.add_enabled(scene.show_roads, egui::Checkbox::new(&mut scene.show_models, lang.tr("Modele P3D")))
+                        .on_hover_text(lang.tr("Modele dróg i torów z P3D z teksturami; bez nich same obrysy"));
+                    ui.horizontal(|ui| {
+                        ui.label(lang.tr("Przewyższenie"));
+                        ui.add(egui::Slider::new(&mut scene.exaggeration, 1.0..=5.0).suffix("×").step_by(0.1));
+                    });
+                    if scene.layout().is_some() {
+                        let (lo, hi) = scene.range();
+                        ui.small(lang.tr(&format!(
+                            "Wysokości {:.0}–{:.0} m · kafle terenu: {}",
+                            lo,
+                            hi,
+                            scene.visible_tiles().count()
+                        )));
+                    }
+                    if let Some(r) = scene.roads() {
+                        ui.small(lang.tr(&format!("Modele: {} części, bez modelu: {}", r.parts, r.missing)));
+                    }
+                    if ui.button(lang.tr("Resetuj kamerę")).clicked() {
+                        scene.reset_camera();
+                    }
+                    ui.small(lang.tr("LPM: obrót · PPM: przesuwanie · kółko: przybliżenie"));
+                });
+        });
+        self.scene = scene;
     }
 }
 fn distance_to_segment(p: Pos2, a: Pos2, b: Pos2) -> f32 {
@@ -2466,7 +2945,7 @@ mod tests {
             parts: vec![dayz_road_tool::roads::PlacedPart {
                 model: "asf2_25.p3d".into(), reverse: false,
                 position: [0., 0.], rotation: 0.,
-            }], replaces: Some(42),
+            }], replaces: Some(42), rail: false, extras: vec![],
         });
         app.insert_route_point(0, 0, [50., 10.]);
         assert_eq!(app.doc.routes[0].points, vec![[0., 0.], [50., 10.], [100., 0.]]);
@@ -2525,7 +3004,7 @@ mod tests {
             family: "asf2".into(),
             points: vec![start],
             parts: vec![],
-            replaces: Some(9),
+            replaces: Some(9), rail: false, extras: vec![],
         });
         app.rebuild();
         assert!(app.png_previews().is_empty());
@@ -2643,6 +3122,71 @@ mod tests {
         assert!(app.doc.routes.is_empty());
         app.undo(true);
         assert_eq!(app.doc.routes.len(), 1);
+    }
+
+    #[test]
+    fn track_catalog_is_kept_and_drawn_tracks_use_track_constraints() {
+        let mut app = App::new();
+        app.set_language(dayz_road_tool::i18n::Language::English);
+        let part = |path: &str, family: &str, category| CatalogPart {
+            path: path.into(),
+            family: family.into(),
+            category,
+            index: 0,
+            road_type_index: u32::MAX,
+            model: dayz_road_tool::geometry::filename_model("asf2_25.p3d").unwrap(),
+        };
+        app.catalog.push(part("asf2_25.p3d", "asf2", 3));
+        let (tx, rx) = mpsc::channel();
+        let folder = std::env::temp_dir().join("tracks");
+        tx.send(Ok(Loaded::Rails(
+            folder.clone(),
+            vec![part("Rail_TrackE_25.p3d", "Rail_TrackE", 3)],
+            vec![],
+        )))
+        .unwrap();
+        app.jobs.push(Job { rx, cancel: Arc::new(AtomicBool::new(false)), label: "Odczyt modeli torów".into() });
+        app.tick(&egui::Context::default());
+        assert_eq!(app.catalog.len(), 2);
+        assert_eq!(app.doc.rail_models, Some(folder));
+        assert!(app.status.contains("Rail_TrackE"), "{}", app.status);
+        // A route drawn with a track family is a track and is routed with the track limits.
+        app.family = "Rail_TrackE".into();
+        app.tool = Tool::Draw;
+        app.draft = vec![[0., 0.], [100., 0.]];
+        app.finish();
+        assert!(app.doc.routes[0].rail);
+        assert_eq!(app.settings_for("Rail_TrackE").max_grade, app.doc.rail_routing.max_grade);
+        assert_eq!(app.settings_for("asf2").max_grade, app.doc.routing.max_grade);
+        // Setting a road type turns it back into a road.
+        app.family = "asf2".into();
+        app.draft = vec![[0., 10.], [100., 10.]];
+        app.finish();
+        assert!(!app.doc.routes[1].rail);
+        // Tracks without models block their own export, not the TV4P one.
+        app.export_rails();
+        assert_eq!(app.status, "Dopasuj modele do wszystkich torowisk przed eksportem");
+
+        let ctx = egui::Context::default();
+        let output = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(1440., 1400.))),
+                ..Default::default()
+            },
+            |ctx| app.show(ctx),
+        );
+        let mut found = Vec::new();
+        fn texts(shape: &egui::epaint::Shape, found: &mut Vec<String>) {
+            match shape {
+                egui::epaint::Shape::Text(t) => found.push(t.galley.job.text.clone()),
+                egui::epaint::Shape::Vec(v) => v.iter().for_each(|s| texts(s, found)),
+                _ => {}
+            }
+        }
+        output.shapes.iter().for_each(|s| texts(&s.shape, &mut found));
+        for label in ["Track constraints", "Export tracks TB…", "Track models…", "Max. cut m", "Max. fill m", "Earthwork penalty", "Side slope 1:", "Grade ASC under the selected route"] {
+            assert!(found.iter().any(|t| t == label), "missing {label}");
+        }
     }
 
     #[test]
@@ -2871,6 +3415,89 @@ mod tests {
     }
 
     #[test]
+    fn map_switches_to_3d_terrain_with_roads_and_back_to_the_same_place() {
+        fn texts(shape: &egui::epaint::Shape, found: &mut Vec<(String, Pos2)>) {
+            match shape {
+                egui::epaint::Shape::Text(t) => found.push((t.galley.job.text.clone(), t.pos + t.galley.size() / 2.)),
+                egui::epaint::Shape::Vec(v) => v.iter().for_each(|s| texts(s, found)),
+                _ => {}
+            }
+        }
+        fn frame(ctx: &egui::Context, app: &mut App, events: Vec<egui::Event>) -> (Vec<(String, Pos2)>, usize) {
+            let out = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1440., 920.))),
+                    events,
+                    ..Default::default()
+                },
+                |ctx| app.show(ctx),
+            );
+            let mut found = vec![];
+            let mut callbacks = 0;
+            for s in &out.shapes {
+                texts(&s.shape, &mut found);
+                callbacks += matches!(s.shape, egui::epaint::Shape::Callback(_)) as usize;
+            }
+            (found, callbacks)
+        }
+        fn click(ctx: &egui::Context, app: &mut App, pos: Pos2) {
+            let press = |pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+            frame(ctx, app, vec![egui::Event::PointerMoved(pos), press(true)]);
+            frame(ctx, app, vec![press(false)]);
+        }
+        let dir = std::env::temp_dir().join(format!("road-3d-ui-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // 32 x 32 cells of 10 m rising 1 m per cell to the east.
+        std::fs::write(dir.join("terrain.json"), r#"{"cols":32,"rows":32,"east":1000.0,"north":2000.0,"cell":10.0}"#).unwrap();
+        let heights: Vec<u8> = (0..32 * 32).flat_map(|i| (100. + (i % 32) as f32).to_le_bytes()).collect();
+        std::fs::write(dir.join("height.f32"), heights).unwrap();
+        let mut app = App::initial();
+        app.set_language(dayz_road_tool::i18n::Language::English);
+        app.tool = Tool::Select;
+        app.terrain_dir = Some(dir.clone());
+        app.terrain = Some(Terrain::open(&dir).unwrap());
+        app.center = [1160., 2160.];
+        app.scale = 2.;
+        let mut road = Shape::default();
+        road.triangles.push([[1050., 2150.], [1250., 2150.], [1250., 2156.]]);
+        road.lines.push(vec![[1050., 2153.], [1250., 2153.]]);
+        app.push_preview(Selection::Existing(7), road, "asf2".into());
+        let ctx = egui::Context::default();
+        let (found, callbacks) = frame(&ctx, &mut app, vec![]);
+        assert_eq!(callbacks, 0);
+        let button = found.iter().find(|(t, _)| t == "3D").unwrap().1;
+        click(&ctx, &mut app, button);
+        assert!(app.view3d);
+        let mut done = false;
+        for _ in 0..200 {
+            frame(&ctx, &mut app, vec![]);
+            if app.scene.roads().is_some() && app.scene.visible_tiles().count() > 0 && !app.scene.building() {
+                done = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(done, "the 3D scene was built");
+        let (lo, hi) = app.scene.range();
+        assert!(lo >= 99. && hi <= 132., "{lo} {hi}");
+        assert!(app.scene.roads().unwrap().fallback.triangles() > 10);
+        let (found, callbacks) = frame(&ctx, &mut app, vec![]);
+        assert_eq!(callbacks, 1, "OpenGL draws the scene");
+        for label in ["3D view", "Satellite", "Water (level 0.0 m)", "Roads and tracks", "P3D models", "Vertical exaggeration", "Reset camera"] {
+            assert!(found.iter().any(|(t, _)| t == label), "{label}");
+        }
+        // Panning in 3D moves the camera; the 2D plan opens where it looks.
+        if let Some(c) = &mut app.scene.camera {
+            c.target = [1100., 2250.];
+        }
+        let button = found.iter().find(|(t, _)| t == "2D").unwrap().1;
+        click(&ctx, &mut app, button);
+        assert!(!app.view3d);
+        assert_eq!(app.center, [1100., 2250.]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn graded_terrain_undo_redo_restores_cache_and_saved_project() {
         let root = std::env::temp_dir().join(format!("road-grade-ui-{}", std::process::id()));
         let old = root.join("old");
@@ -2894,7 +3521,7 @@ mod tests {
         tx.send(Ok(Loaded::Graded(
             new.clone(),
             Terrain::open(&new).unwrap(),
-            4,
+            dayz_road_tool::grading::Report { changed: 4, ..Default::default() },
         )))
         .unwrap();
         app.jobs.push(Job {

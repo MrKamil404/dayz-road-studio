@@ -37,6 +37,12 @@ pub struct Route {
     pub parts: Vec<PlacedPart>,
     /// Imported record replaced by this route; omitted for new roads.
     pub replaces: Option<u32>,
+    /// Railway track: fitted with track models, exported as Terrain Builder objects.
+    #[serde(default)]
+    pub rail: bool,
+    /// Objects along a track that are not chained pieces (level-crossing decks).
+    #[serde(default)]
+    pub extras: Vec<PlacedPart>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub struct RoutingSettings {
@@ -45,6 +51,17 @@ pub struct RoutingSettings {
     pub cell: f64,
     pub min_radius: f64,
     pub tolerance: f64,
+    /// How far the road may be cut into (below) or built up above the terrain, m.
+    #[serde(default)]
+    pub max_cut: f64,
+    #[serde(default)]
+    pub max_fill: f64,
+    /// Cost of earthwork in metres of road per m² of cut or fill along the route.
+    #[serde(default = "default_earth_weight")]
+    pub earth_weight: f64,
+}
+fn default_earth_weight() -> f64 {
+    0.5
 }
 impl Default for RoutingSettings {
     fn default() -> Self {
@@ -54,7 +71,47 @@ impl Default for RoutingSettings {
             cell: 20.,
             min_radius: 25.,
             tolerance: 5.,
+            max_cut: 0.,
+            max_fill: 0.,
+            earth_weight: default_earth_weight(),
         }
+    }
+}
+impl RoutingSettings {
+    /// Railway defaults: gentle grades and wide curves (the DayZ 10° / 25 m curve is R 143 m).
+    pub fn rail() -> Self {
+        Self {
+            max_grade: 3.,
+            slope_weight: 8.,
+            cell: 25.,
+            min_radius: 110.,
+            tolerance: 3.,
+            max_cut: 0.,
+            max_fill: 0.,
+            earth_weight: default_earth_weight(),
+        }
+    }
+    fn valid(&self) -> bool {
+        [
+            self.max_grade,
+            self.slope_weight,
+            self.cell,
+            self.min_radius,
+            self.tolerance,
+            self.max_cut,
+            self.max_fill,
+            self.earth_weight,
+        ]
+        .iter()
+        .all(|x| x.is_finite())
+            && (0.0..=100.).contains(&self.max_cut)
+            && (0.0..=100.).contains(&self.max_fill)
+            && self.earth_weight >= 0.
+            && self.max_grade > 0.
+            && self.slope_weight >= 0.
+            && self.cell > 0.
+            && self.min_radius > 0.
+            && self.tolerance > 0.
     }
 }
 /// Forbidden corridor along a line, e.g. a river imported from SHP.
@@ -85,9 +142,18 @@ pub struct Document {
     pub terrain_origin: Option<Point>,
     pub map: MapSettings,
     pub routing: RoutingSettings,
+    /// Constraints for railway tracks.
+    #[serde(default = "RoutingSettings::rail")]
+    pub rail_routing: RoutingSettings,
+    /// Folder with the `Rail_Track*.p3d` models.
+    #[serde(default)]
+    pub rail_models: Option<PathBuf>,
     /// Smooth transition width beyond the MLOD footprint, in metres per side.
     #[serde(default)]
     pub grading_blend_width: f64,
+    /// Embankment and cut slopes when grading: horizontal metres per vertical metre.
+    #[serde(default = "default_side_slope")]
+    pub grading_side_slope: f64,
     pub routes: Vec<Route>,
     pub deleted: Vec<u32>,
     #[serde(default)]
@@ -113,7 +179,10 @@ impl Default for Document {
             terrain_origin: None,
             map: MapSettings::default(),
             routing: RoutingSettings::default(),
+            rail_routing: RoutingSettings::rail(),
+            rail_models: None,
             grading_blend_width: 0.,
+            grading_side_slope: default_side_slope(),
             routes: vec![],
             deleted: vec![],
             transforms: vec![],
@@ -124,28 +193,21 @@ impl Default for Document {
         }
     }
 }
+fn default_side_slope() -> f64 {
+    1.5
+}
 impl Document {
     pub fn validate(&self) -> Result<()> {
+        ensure!(
+            self.grading_side_slope.is_finite() && (0.5..=10.).contains(&self.grading_side_slope),
+            "Nieprawidłowe nachylenie skarp"
+        );
         ensure!(self.grading_blend_width.is_finite() && (0.0..=500.).contains(&self.grading_blend_width),
             "Nieprawidłowa szerokość wygładzania terenu");
         ensure!(self.version == 1, "Nieobsługiwana wersja projektu");
         ensure!(self.map.valid(), "Nieprawidłowe współrzędne mapy");
-        let s = &self.routing;
         ensure!(
-            [
-                s.max_grade,
-                s.slope_weight,
-                s.cell,
-                s.min_radius,
-                s.tolerance
-            ]
-            .iter()
-            .all(|x| x.is_finite())
-                && s.max_grade > 0.
-                && s.slope_weight >= 0.
-                && s.cell > 0.
-                && s.min_radius > 0.
-                && s.tolerance > 0.,
+            self.routing.valid() && self.rail_routing.valid(),
             "Nieprawidłowe ustawienia trasy"
         );
         for r in &self.routes {
