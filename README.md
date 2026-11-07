@@ -56,9 +56,9 @@ Current application version: **2.5.0** (`2.5.0` in Cargo). The application is na
 
 ## Application language
 
-Change the language using the selector in the top navigation bar of the application. Existing statuses and warnings also change language without reloading the project. Polish is the default. Model names, paths, IDs and units stay unchanged. Standard controls in native file dialogs and operating-system error details use the Windows system language.
+Change the language using the selector in the top navigation bar of the application. Existing statuses and warnings also change language without reloading the project. Polish is the default; the chosen language is remembered in `%LOCALAPPDATA%\DayZRoadStudio\settings.json` and used the next time the GUI starts. Model names, paths, IDs and units stay unchanged. Standard controls in native file dialogs and operating-system error details use the Windows system language.
 
-Use `--lang` before a command to choose the GUI or CLI language:
+Use `--lang` before a command to choose the GUI or CLI language; it takes precedence over the remembered choice and does not change it. CLI commands without `--lang` use Polish:
 
 ```powershell
 .\tv4p_merge_roads.exe --lang en

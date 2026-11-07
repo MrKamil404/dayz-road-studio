@@ -336,6 +336,8 @@ struct Shell {
     merge: gui::App,
     builder: Builder,
     updater: Updater,
+    /// Where the chosen language is remembered; `None` in tests.
+    settings: Option<PathBuf>,
 }
 
 impl Shell {
@@ -365,6 +367,7 @@ impl Shell {
             merge: gui::App::new(language),
             builder,
             updater: Updater::new(),
+            settings: None,
         }
     }
 
@@ -440,6 +443,7 @@ impl Shell {
     fn show(&mut self, ctx: &egui::Context) {
         self.apply_style(ctx);
         let lang = self.language;
+        let before = self.language;
         egui::TopBottomPanel::top("toolsets").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.strong("DAYZ ROAD STUDIO");
@@ -471,6 +475,11 @@ impl Shell {
                 });
             });
         });
+        if self.language != before
+            && let Some(file) = &self.settings
+        {
+            crate::settings::save_language(file, self.language);
+        }
         self.apply_style(ctx);
         self.merge.set_language(self.language);
         self.builder.set_language(match self.language {
@@ -524,6 +533,7 @@ pub(crate) fn run(language: Language) -> anyhow::Result<()> {
         },
         Box::new(move |_| {
             let mut shell = Shell::new(language);
+            shell.settings = crate::settings::path();
             if let Some(exe) = Updater::exe() {
                 update::cleanup(&exe);
             }

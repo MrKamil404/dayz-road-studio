@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- The GUI remembers the chosen language in `%LOCALAPPDATA%\DayZRoadStudio\settings.json`; `--lang` still takes precedence.
+
 ## 2.5.0 — 2026-11-07
 
 ### Added

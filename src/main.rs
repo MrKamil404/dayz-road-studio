@@ -2,6 +2,7 @@ mod geometry;
 mod gui;
 mod i18n;
 mod render;
+mod settings;
 mod shell;
 mod tv4p;
 mod update;
@@ -26,6 +27,9 @@ fn main() {
         };
         args.drain(..2);
         language
+    } else if args.is_empty() {
+        // The GUI opens in the language chosen last time; CLI commands stay Polish by default.
+        settings::path().and_then(|p| settings::language(&p)).unwrap_or_default()
     } else {
         Language::Polish
     };
