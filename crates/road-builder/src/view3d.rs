@@ -1227,7 +1227,8 @@ void main() {
     if (u_textured == 1 && inside) {
         vec4 t = texture(u_tex, v_uv);
         if (u_clamp == 0 && t.a < 0.35) discard;
-        base = vec4(t.rgb * v_color.rgb, v_color.a);
+        // Terrain vertices carry the elevation tint, which must not colour the satellite.
+        base = vec4(u_clamp == 1 ? t.rgb : t.rgb * v_color.rgb, v_color.a);
     }
     float light = 1.0;
     if (u_lit == 1) {

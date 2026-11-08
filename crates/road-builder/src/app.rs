@@ -2752,6 +2752,12 @@ impl App {
         if let Some(dir) = var("DAYZ_SCREENSHOT_SAT") {
             self.raster = Raster::open(std::path::Path::new(&dir)).ok();
         }
+        // DAYZ_SCREENSHOT_ROOT replaces the P: work drive when it is not mounted.
+        let root = var("DAYZ_SCREENSHOT_ROOT");
+        if let Some(root) = &root {
+            self.doc.models = std::path::Path::new(root).join("dz/structures/roads/parts");
+            self.lib = Library::new(self.doc.models.clone());
+        }
         if let Some(path) = var("DAYZ_SCREENSHOT_TV4P") {
             let mut lib = Library::new(self.doc.models.clone());
             self.base = tv4p::load(std::path::Path::new(&path), &mut lib).ok();
@@ -2765,7 +2771,11 @@ impl App {
             && t.len() >= 4
             && let Some(terrain) = &self.terrain
         {
-            let folder = std::path::Path::new(dayz_road_tool::rails::DEFAULT_FOLDER);
+            let folder = root.as_ref().map_or_else(
+                || PathBuf::from(dayz_road_tool::rails::DEFAULT_FOLDER),
+                |r| std::path::Path::new(r).join("dz/structures/rail/Tracks"),
+            );
+            let folder = folder.as_path();
             let mut lib = Library::new(folder.into());
             if let Ok((parts, _)) = dayz_road_tool::rails::catalog(folder, &mut lib) {
                 self.catalog.extend(parts);

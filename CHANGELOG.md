@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.5.2 — 2026-11-08
+
+### Fixed
+- The 3D view no longer darkens and tints the satellite image with the elevation colours.
+
 ## 2.5.1 — 2026-11-07
 
 ### Added
