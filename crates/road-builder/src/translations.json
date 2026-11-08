@@ -2198,5 +2198,93 @@
   {
     "pl": "Wyznaczona lub dopasowana trasa od razu dostaje tymczasowe nasypy i wykopy; ustawienia bierze z ograniczeń trasy",
     "en": "A routed or fitted route immediately gets temporary embankments and cuts, using the limits of its constraints"
+  },
+  {
+    "pl": "Kliknij trasę, którą chcesz edytować.",
+    "en": "Click the route you want to edit."
+  },
+  {
+    "pl": "Klikaj na mapie, aby dodawać kolejne punkty. Enter lub Esc kończy.",
+    "en": "Click the map to add points. Enter or Esc finishes."
+  },
+  {
+    "pl": "Przeciągnij zaznaczony punkt, aby go przesunąć. Delete usuwa punkt, Esc odznacza.",
+    "en": "Drag the selected point to move it. Delete removes the point, Esc deselects it."
+  },
+  {
+    "pl": "Kliknij punkt, aby go zaznaczyć. Plus na linii dodaje punkt między dwoma sąsiednimi.",
+    "en": "Click a point to select it. The plus on a line adds a point between its two neighbours."
+  },
+  {
+    "pl": "Trasa: {0}",
+    "en": "Route: {0}"
+  },
+  {
+    "pl": "Zaznaczony punkt: {0} z {1}",
+    "en": "Selected point: {0} of {1}"
+  },
+  {
+    "pl": "Usuń punkt",
+    "en": "Remove point"
+  },
+  {
+    "pl": "Nie zaznaczono punktu",
+    "en": "No point selected"
+  },
+  {
+    "pl": "Przedłużanie od początku",
+    "en": "Extending from the start"
+  },
+  {
+    "pl": "Przedłużanie od końca",
+    "en": "Extending from the end"
+  },
+  {
+    "pl": "Zakończ przedłużanie",
+    "en": "Finish extending"
+  },
+  {
+    "pl": "Przedłuż od początku",
+    "en": "Extend from the start"
+  },
+  {
+    "pl": "Przedłuż od końca",
+    "en": "Extend from the end"
+  },
+  {
+    "pl": "Po edycji dopasuj modele lub wyznacz trasę ponownie.",
+    "en": "After editing, fit the models or route it again."
+  },
+  {
+    "pl": "Punkt {0}",
+    "en": "Point {0}"
+  },
+  {
+    "pl": "Trasa musi mieć co najmniej dwa punkty",
+    "en": "A route needs at least two points"
+  },
+  {
+    "pl": "Eksport torów do Terrain Builder",
+    "en": "Track export to Terrain Builder"
+  },
+  {
+    "pl": "Zaznacz, jeśli po imporcie tory pochylają się w przeciwną stronę niż teren",
+    "en": "Tick this if the tracks tilt against the terrain after import"
+  },
+  {
+    "pl": "Odwróć znak pochylenia",
+    "en": "Invert pitch sign"
+  },
+  {
+    "pl": "Odwróć znak przechyłu",
+    "en": "Invert roll sign"
+  },
+  {
+    "pl": "Brak torowiska pod obiektem przejazdu",
+    "en": "No track under the crossing object"
+  },
+  {
+    "pl": "Nieprawidłowa długość toru",
+    "en": "Invalid track length"
   }
 ]

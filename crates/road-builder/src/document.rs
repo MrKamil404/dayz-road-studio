@@ -172,6 +172,11 @@ pub struct Document {
     /// Generated routes adapt the terrain under them right away.
     #[serde(default = "default_auto_grade")]
     pub auto_grade: bool,
+    /// Sign of pitch and roll written to the Terrain Builder object file.
+    #[serde(default)]
+    pub rail_invert_pitch: bool,
+    #[serde(default)]
+    pub rail_invert_roll: bool,
     pub routes: Vec<Route>,
     pub deleted: Vec<u32>,
     #[serde(default)]
@@ -202,6 +207,8 @@ impl Default for Document {
             grading_blend_width: 0.,
             grading_side_slope: default_side_slope(),
             auto_grade: true,
+            rail_invert_pitch: false,
+            rail_invert_roll: false,
             routes: vec![],
             deleted: vec![],
             transforms: vec![],

@@ -445,8 +445,10 @@ pub struct RoadItem {
     pub color: [u8; 3],
     /// P3D file, rotation and translation of each part.
     pub placements: Vec<(PathBuf, f64, Point)>,
-    /// Tracks stand level at their origin; road parts follow the terrain.
+    /// Tracks are rigid; road parts follow the terrain.
     pub rigid: bool,
+    /// Where each rigid piece lies on the terrain, one per placement.
+    pub poses: Vec<crate::rails::Pose>,
     /// The selected road keeps its highlighted footprint over the models.
     pub highlight: bool,
 }
@@ -524,7 +526,8 @@ pub fn build_roads(
             item.color,
         );
         let mut complete = !item.placements.is_empty();
-        for (file, angle, t) in &item.placements {
+        let poses = (item.poses.len() == item.placements.len()).then_some(&item.poses);
+        for (index, (file, angle, t)) in item.placements.iter().enumerate() {
             parts += 1;
             let Some(m) = cache.mesh(file) else {
                 missing += 1;
@@ -548,6 +551,12 @@ pub fn build_roads(
                     let corners: Vec<[f32; 3]> = tri
                         .iter()
                         .map(|v| {
+                            if item.rigid
+                                && let Some(pose) = poses.map(|p| p[index])
+                            {
+                                let q = pose.apply(*v);
+                                return layout.local([q[0], q[1]], q[2]);
+                            }
                             let w = geometry::add(
                                 geometry::rotate([v[0] as f64, v[2] as f64], *angle),
                                 *t,
@@ -1766,6 +1775,7 @@ mod tests {
             color: [200, 50, 50],
             placements: vec![],
             rigid: false,
+            poses: vec![],
             highlight: false,
         };
         let r = build_roads(&layout, Some(&t), &[item], &Default::default());
@@ -1790,6 +1800,7 @@ mod tests {
                     color: [0; 3],
                     placements: vec![(f.into(), 0.3, at)],
                     rigid,
+                    poses: vec![],
                     highlight: false,
                 })
                 .collect();

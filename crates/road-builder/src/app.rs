@@ -180,6 +180,14 @@ pub struct App {
     show_roads: bool,
     drag_point: Option<usize>,
     drag_snapshot: bool,
+    /// The Select tool moves the selection only when the drag started on it.
+    drag_move: bool,
+    /// Offset from the pointer to the dragged point.
+    drag_grab: Point,
+    /// Point being edited, as (route, point).
+    edit_selected: Option<(usize, usize)>,
+    /// Route being extended, as (route, from its start).
+    edit_extend: Option<(usize, bool)>,
     contour_cache: Vec<(Point, Point)>,
     contour_key: Option<[u64; 5]>,
     live_epoch: u64,
@@ -431,7 +439,7 @@ impl App {
         }
     }
     fn initial() -> Self {
-        Self {png_settings: PngSettings::default(),png_job: None,language: Default::default(),doc:Document::default(),file:None,dirty:false,undo:vec![],redo:vec![],base:None,catalog:vec![],lib:Library::new(Document::default().models),warnings:vec![],raster:None,terrain:None,terrain_dir:None,jobs:vec![],center:[207680.,7680.],scale:0.05,tool:Tool::Draw,selected:None,draft:vec![],family:String::new(),model:0,reverse:false,angle:90.,previews:vec![],index:HashMap::new(),tiles:HashMap::new(),tile_age:vec![],status:"Otwórz TV4P, wybierz modele MLOD i wczytaj mapę. Punkty trasy dodajesz kliknięciem.".into(),contours:true,interval:10.,opacity:1.,show_sat:true,show_roads:true,drag_point:None,drag_snapshot:false,contour_cache:vec![],contour_key:None,live_epoch:0,live_job:None,live_candidate:None,live_confirmed:None,live_action:None,live_tick:Instant::now()-Duration::from_secs(1),shp_dialog:None,obstacles:Default::default(),rails_request:false,show_forbidden:true,water_overlay:None,view3d:false,scene:Default::default(),compose_key:None,grade_request:None,preview_epoch:0}
+        Self {png_settings: PngSettings::default(),png_job: None,language: Default::default(),doc:Document::default(),file:None,dirty:false,undo:vec![],redo:vec![],base:None,catalog:vec![],lib:Library::new(Document::default().models),warnings:vec![],raster:None,terrain:None,terrain_dir:None,jobs:vec![],center:[207680.,7680.],scale:0.05,tool:Tool::Draw,selected:None,draft:vec![],family:String::new(),model:0,reverse:false,angle:90.,previews:vec![],index:HashMap::new(),tiles:HashMap::new(),tile_age:vec![],status:"Otwórz TV4P, wybierz modele MLOD i wczytaj mapę. Punkty trasy dodajesz kliknięciem.".into(),contours:true,interval:10.,opacity:1.,show_sat:true,show_roads:true,drag_point:None,drag_snapshot:false,drag_move:false,drag_grab:[0.,0.],edit_selected:None,edit_extend:None,contour_cache:vec![],contour_key:None,live_epoch:0,live_job:None,live_candidate:None,live_confirmed:None,live_action:None,live_tick:Instant::now()-Duration::from_secs(1),shp_dialog:None,obstacles:Default::default(),rails_request:false,show_forbidden:true,water_overlay:None,view3d:false,scene:Default::default(),compose_key:None,grade_request:None,preview_epoch:0}
     }
     fn checkpoint(&mut self) {
         self.undo.push(self.doc.clone());
@@ -1155,6 +1163,10 @@ impl App {
         let (roads_near, rail_folder) = self.crossing_input();
         let dir = self.terrain_dir.clone();
         let meta = self.terrain.as_ref().map(|t| t.meta.clone());
+        let signs = dayz_road_tool::rails::ExportSigns {
+            invert_pitch: self.doc.rail_invert_pitch,
+            invert_roll: self.doc.rail_invert_roll,
+        };
         self.start("Eksport torów", move |cancel| {
             let terrain = dir.map(|d| Terrain::open(&d)).transpose()?.map(|mut t| {
                 if let Some(m) = meta {
@@ -1186,7 +1198,9 @@ impl App {
                     .with_context(|| format!("Torowisko {}", route.name))?;
             }
             let refs: Vec<_> = tracks.iter().collect();
-            let text = dayz_road_tool::rails::objects(&refs)?;
+            let ground = terrain.as_ref().map(|t| move |p: Point| view3d::height(t, p));
+            let ground: Option<&dyn Fn(Point) -> Option<f64>> = ground.as_ref().map(|g| g as &dyn Fn(Point) -> Option<f64>);
+            let text = dayz_road_tool::rails::objects(&refs, &catalog, ground, signs)?;
             let count = text.lines().count();
             dayz_road_tool::storage::atomic_write(&out, text.as_bytes())?;
             Ok(Loaded::RailExport(out, count))
@@ -1324,12 +1338,12 @@ if ui.button(lang.tr("Usuń ostatni punkt")).clicked(){self.draft.pop();self.cle
                 if self.tool==Tool::Live{ui.small(lang.tr("Zielone segmenty: przewidywany przebieg. Klik zatwierdza poprawne dopasowanie. Enter zapisuje gotową drogę."));}
                 if self.tool==Tool::Forbidden{self.forbidden_controls(ui);}
             }
-            if self.tool==Tool::Edit {ui.small(lang.tr("Przeciągnij punkt, aby zmienić trasę. Podwójny klik na linii dodaje punkt; podwójny prawy klik na punkcie usuwa go. Po edycji dopasuj modele ponownie."));}
+            if self.tool==Tool::Edit {self.edit_controls(ui);}
             ui.separator();ui.heading(lang.tr("Trasy projektu"));
             let rows:Vec<_>=self.doc.routes.iter().enumerate().map(|(i,r)|(i,if r.grading.is_some() {format!("{} · {} części · ASC",r.name,r.parts.len())} else {format!("{} · {} części",r.name,r.parts.len())})).collect();
             egui::ScrollArea::vertical().max_height(240.).show(ui,|ui|{for (i,label) in rows {if ui.selectable_label(self.selected==Some(Selection::Route(i)),lang.tr(&label)).clicked(){self.selected=Some(Selection::Route(i));}}});
             if let Some(Selection::Route(i))=self.selected {
-                if ui.button(lang.tr("Edytuj punkty")).clicked(){self.tool=Tool::Edit;self.draft.clear();self.clear_live();}
+                if ui.button(lang.tr("Edytuj punkty")).clicked(){self.tool=Tool::Edit;self.edit_selected=None;self.edit_extend=None;self.draft.clear();self.clear_live();}
                 if let Some(r)=self.doc.routes.get_mut(i) && ui.text_edit_singleline(&mut r.name).changed(){self.dirty=true;}
 if ui.button(lang.tr("Ustaw typ wybranej trasy")).clicked(){self.checkpoint();self.doc.routes[i].family=self.family.clone();self.doc.routes[i].rail=dayz_road_tool::rails::is_track_family(&self.family);self.doc.routes[i].parts.clear();self.doc.routes[i].extras.clear();self.rebuild();}
                 if ui.button(lang.tr("Dopasuj modele do punktów")).clicked(){self.generate(false);}
@@ -1463,6 +1477,17 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
                         if ui.add_enabled(graded, egui::Button::new(lang.tr("Usuń dopasowanie terenu"))).clicked() { self.remove_grading(); }
                         if ui.add_enabled(self.terrain.is_some(), egui::Button::new(lang.tr("Eksport ASC…"))).clicked() { self.export_asc(); }
                         ui.small(lang.tr("Dopasowanie jest tymczasowe: należy do trasy, a jej usunięcie przywraca teren. Źródłowy ASC się nie zmienia; Eksport ASC zapisuje teren z dopasowaniami do nowego pliku."));
+                        ui.separator();
+                        ui.label(lang.tr("Eksport torów do Terrain Builder"));
+                        let hint = lang.tr("Zaznacz, jeśli po imporcie tory pochylają się w przeciwną stronę niż teren");
+                        let (mut pitch, mut roll) = (self.doc.rail_invert_pitch, self.doc.rail_invert_roll);
+                        let a = ui.checkbox(&mut pitch, lang.tr("Odwróć znak pochylenia")).on_hover_text(hint.clone()).changed();
+                        let b = ui.checkbox(&mut roll, lang.tr("Odwróć znak przechyłu")).on_hover_text(hint).changed();
+                        if a || b {
+                            self.checkpoint();
+                            self.doc.rail_invert_pitch = pitch;
+                            self.doc.rail_invert_roll = roll;
+                        }
                         ui.separator();
                         for (heading, rail) in [("Ograniczenia drogi", false), ("Ograniczenia torowiska", true)] {
                             ui.heading(lang.tr(heading));
@@ -2382,31 +2407,30 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
             Color32::from_rgb(63, 110, 168),
             true,
         );
+        self.draw_edit(ui, &painter, rect, response.hover_pos());
         if self.tool == Tool::Live && self.jobs.is_empty() && self.shp_dialog.is_none() {
             self.update_live(ui, rect, response.hover_pos());
         }
         let busy = !self.jobs.is_empty() || self.shp_dialog.is_some();
         if !busy {
-            let editing_click = self.tool == Tool::Edit
-                && (response.double_clicked() || response.double_clicked_by(egui::PointerButton::Secondary));
+            let editing_click = self.tool == Tool::Edit && response.double_clicked();
             if editing_click
+                && self.edit_extend().is_none()
                 && let Some(Selection::Route(index)) = self.selected
                 && let Some(pos) = response.interact_pointer_pos()
             {
                 let points = &self.doc.routes[index].points;
-                if response.double_clicked_by(egui::PointerButton::Secondary) {
-                    if let Some(point) = points.iter().position(|p| self.screen(*p, rect).distance(pos) < 12.) {
-                        self.remove_route_point(index, point);
-                    }
-                } else if let Some((segment, _)) = points.windows(2).enumerate()
-                    .map(|(i, w)| (i, distance_to_segment(pos, self.screen(w[0], rect), self.screen(w[1], rect))))
-                    .filter(|(_, d)| *d < 12.)
-                    .min_by(|a, b| a.1.total_cmp(&b.1))
+                if !points.iter().any(|p| self.screen(*p, rect).distance(pos) < 12.)
+                    && let Some((segment, _)) = points
+                        .windows(2)
+                        .enumerate()
+                        .map(|(i, w)| (i, distance_to_segment(pos, self.screen(w[0], rect), self.screen(w[1], rect))))
+                        .filter(|(_, d)| *d < 12.)
+                        .min_by(|a, b| a.1.total_cmp(&b.1))
                 {
-                    if !points.iter().any(|p| self.screen(*p, rect).distance(pos) < 8.) {
-                        let world = self.world(pos, rect);
-                        self.insert_route_point(index, segment, world);
-                    }
+                    let world = self.world(pos, rect);
+                    self.insert_route_point(index, segment, world);
+                    self.edit_selected = Some((index, segment + 1));
                 }
             }
             if response.clicked()
@@ -2440,91 +2464,74 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
                         self.selected = Some(Selection::Route(i));
                         self.add_segment();
                     }
-                    Tool::Select | Tool::Edit => {
-                        let mut best = 10.;
-                        let mut selected = None;
-                        for i in &visible {
-                            let p = &self.previews[*i];
-                            for line in &p.shape.lines {
-                                for w in line.windows(2) {
-                                    let d = distance_to_segment(
-                                        pos,
-                                        self.screen(w[0], rect),
-                                        self.screen(w[1], rect),
-                                    );
-                                    if d < best {
-                                        best = d;
-                                        selected = Some(p.id);
-                                    }
-                                }
-                            }
-                        }
-                        for (i, r) in self.doc.routes.iter().enumerate() {
-                            for w in r.points.windows(2) {
-                                let d = distance_to_segment(pos, self.screen(w[0], rect), self.screen(w[1], rect));
-                                if d < best {
-                                    best = d;
-                                    selected = Some(Selection::Route(i));
-                                }
-                            }
-                            for p in &r.points {
-                                if self.screen(*p, rect).distance(pos) < best {
-                                    selected = Some(Selection::Route(i));
-                                    best = self.screen(*p, rect).distance(pos);
-                                }
-                            }
-                        }
-                        self.selected = selected;
-                    }
+                    Tool::Select => self.selected = self.pick(pos, rect, &visible),
+                    Tool::Edit => self.edit_click(pos, rect, &visible),
                 }
             }
             if response.drag_started_by(egui::PointerButton::Primary) && matches!(self.tool, Tool::Select | Tool::Edit) {
                 self.drag_snapshot = false;
                 self.drag_point = None;
-                if let Some(Selection::Route(i)) = self.selected
-                    && let Some(pos) = response.interact_pointer_pos()
-                {
-                    self.drag_point = self.doc.routes[i]
-                        .points
-                        .iter()
-                        .position(|p| self.screen(*p, rect).distance(pos) < 12.);
+                self.drag_move = false;
+                let press = ui.input(|i| i.pointer.press_origin()).or(response.interact_pointer_pos());
+                if let Some(pos) = press {
+                    if self.tool == Tool::Select {
+                        self.drag_move = self.on_selection(pos, rect);
+                    } else if let Some((route, point)) = self.edit_point()
+                        && self.edit_extend().is_none()
+                        && self.screen(self.doc.routes[route].points[point], rect).distance(pos) < 14.
+                    {
+                        // Only the point chosen beforehand can be dragged.
+                        self.drag_point = Some(point);
+                        self.drag_grab = geometry::sub(self.doc.routes[route].points[point], self.world(pos, rect));
+                    }
                 }
             }
             if response.dragged_by(egui::PointerButton::Primary)
-                && matches!(self.tool, Tool::Select | Tool::Edit)
                 && let Some(selection) = self.selected
+                && (self.drag_move || self.drag_point.is_some())
             {
                 if !self.drag_snapshot {
                     self.checkpoint();
                     self.drag_snapshot = true;
                 }
-                let delta = ui.input(|i| i.pointer.delta());
-                let d = [delta.x as f64 / self.scale, -delta.y as f64 / self.scale];
-                match selection {
-                    Selection::Existing(id) => {
+                match (selection, self.drag_point) {
+                    (Selection::Route(i), Some(p)) => {
+                        if let Some(pos) = ui.input(|i| i.pointer.latest_pos()) {
+                            let world = geometry::add(self.world(pos, rect), self.drag_grab);
+                            let r = &mut self.doc.routes[i];
+                            if p < r.points.len() {
+                                r.points[p] = world;
+                                r.parts.clear();
+                                r.extras.clear();
+                            }
+                        }
+                    }
+                    (Selection::Route(i), None) => {
+                        let delta = ui.input(|i| i.pointer.delta());
+                        let d = [delta.x as f64 / self.scale, -delta.y as f64 / self.scale];
+                        let r = &mut self.doc.routes[i];
+                        for p in &mut r.points {
+                            *p = geometry::add(*p, d);
+                        }
+                        for p in r.parts.iter_mut().chain(&mut r.extras) {
+                            p.position = geometry::add(p.position, d);
+                        }
+                    }
+                    (Selection::Existing(id), _) => {
+                        let delta = ui.input(|i| i.pointer.delta());
+                        let d = [delta.x as f64 / self.scale, -delta.y as f64 / self.scale];
                         if let Some(t) = self.doc.transforms.iter_mut().find(|t| t.0 == id) {
                             t.1 = geometry::add(t.1, d);
                         } else {
                             self.doc.transforms.push((id, d, 0.));
                         }
                     }
-                    Selection::Route(i) => {
-                        let r = &mut self.doc.routes[i];
-                        if let Some(p) = self.drag_point {
-                            r.points[p] = geometry::add(r.points[p], d);
-                            r.parts.clear();
-                            r.extras.clear();
-                        } else {
-                            for p in &mut r.points {
-                                *p = geometry::add(*p, d);
-                            }
-                            for p in r.parts.iter_mut().chain(&mut r.extras) {
-                                p.position = geometry::add(p.position, d);
-                            }
-                        }
-                    }
                 }
                 self.rebuild();
+            }
+            if response.drag_stopped() {
+                self.drag_point = None;
+                self.drag_move = false;
             }
         }
         if let Some(pos) = response.hover_pos() {
@@ -2555,6 +2562,283 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
             egui::FontId::monospace(12.),
             INK,
         );
+    }
+    /// The road or route under the pointer.
+    fn pick(&self, pos: Pos2, rect: Rect, visible: &BTreeSet<usize>) -> Option<Selection> {
+        let mut best = 10.;
+        let mut selected = None;
+        for i in visible {
+            let p = &self.previews[*i];
+            for line in &p.shape.lines {
+                for w in line.windows(2) {
+                    let d = distance_to_segment(pos, self.screen(w[0], rect), self.screen(w[1], rect));
+                    if d < best {
+                        best = d;
+                        selected = Some(p.id);
+                    }
+                }
+            }
+        }
+        for (i, r) in self.doc.routes.iter().enumerate() {
+            for w in r.points.windows(2) {
+                let d = distance_to_segment(pos, self.screen(w[0], rect), self.screen(w[1], rect));
+                if d < best {
+                    best = d;
+                    selected = Some(Selection::Route(i));
+                }
+            }
+            for p in &r.points {
+                if self.screen(*p, rect).distance(pos) < best {
+                    selected = Some(Selection::Route(i));
+                    best = self.screen(*p, rect).distance(pos);
+                }
+            }
+        }
+        selected
+    }
+    /// Whether a screen position lies on the selected road or route.
+    fn on_selection(&self, pos: Pos2, rect: Rect) -> bool {
+        let Some(selection) = self.selected else { return false };
+        let near = |line: &[Point]| {
+            line.windows(2).any(|w| distance_to_segment(pos, self.screen(w[0], rect), self.screen(w[1], rect)) < 10.)
+        };
+        let route = matches!(selection, Selection::Route(i) if near(&self.doc.routes[i].points));
+        route || self.previews.iter().filter(|p| p.id == selection).any(|p| p.shape.lines.iter().any(|l| near(l)))
+    }
+    /// The point chosen for editing on the selected route, as (route, point).
+    fn edit_point(&self) -> Option<(usize, usize)> {
+        let (route, point) = self.edit_selected?;
+        (self.tool == Tool::Edit
+            && self.selected == Some(Selection::Route(route))
+            && self.doc.routes.get(route).is_some_and(|r| point < r.points.len()))
+        .then_some((route, point))
+    }
+    /// The route being extended and whether from its start.
+    fn edit_extend(&self) -> Option<(usize, bool)> {
+        let (route, start) = self.edit_extend?;
+        (self.tool == Tool::Edit
+            && self.selected == Some(Selection::Route(route))
+            && route < self.doc.routes.len())
+        .then_some((route, start))
+    }
+    /// Screen positions of the "add a point" handles: (segment, midpoint).
+    fn edit_midpoints(&self, route: usize, rect: Rect) -> Vec<(usize, Point)> {
+        self.doc.routes[route]
+            .points
+            .windows(2)
+            .enumerate()
+            .filter(|(_, w)| self.screen(w[0], rect).distance(self.screen(w[1], rect)) >= 36.)
+            .map(|(i, w)| (i, geometry::mul(geometry::add(w[0], w[1]), 0.5)))
+            .collect()
+    }
+    /// Click with the Edit tool: choose a route, then a point; plus handles add points.
+    fn edit_click(&mut self, pos: Pos2, rect: Rect, visible: &BTreeSet<usize>) {
+        if let Some((route, start)) = self.edit_extend() {
+            self.extend_route(route, start, self.world(pos, rect));
+            return;
+        }
+        if let Some(Selection::Route(route)) = self.selected
+            && route < self.doc.routes.len()
+        {
+            let nearest = self.doc.routes[route]
+                .points
+                .iter()
+                .enumerate()
+                .map(|(i, p)| (i, self.screen(*p, rect).distance(pos)))
+                .filter(|(_, d)| *d < 12.)
+                .min_by(|a, b| a.1.total_cmp(&b.1));
+            if let Some((point, _)) = nearest {
+                self.edit_selected = Some((route, point));
+                return;
+            }
+            let plus = self
+                .edit_midpoints(route, rect)
+                .into_iter()
+                .find(|(_, m)| self.screen(*m, rect).distance(pos) < 10.);
+            if let Some((segment, middle)) = plus {
+                self.insert_route_point(route, segment, middle);
+                self.edit_selected = Some((route, segment + 1));
+                return;
+            }
+        }
+        match self.pick(pos, rect, visible) {
+            // Clicking the route already being edited changes nothing.
+            Some(s @ Selection::Route(_)) if self.selected == Some(s) => {}
+            Some(s @ Selection::Route(_)) => {
+                self.selected = Some(s);
+                self.edit_selected = None;
+            }
+            _ => {
+                // Empty map: release the point first, then the route.
+                if self.edit_point().is_some() {
+                    self.edit_selected = None;
+                } else {
+                    self.selected = None;
+                }
+            }
+        }
+    }
+    fn extend_route(&mut self, route: usize, start: bool, point: Point) {
+        self.checkpoint();
+        let r = &mut self.doc.routes[route];
+        let index = if start { 0 } else { r.points.len() };
+        r.points.insert(index, point);
+        r.parts.clear();
+        r.extras.clear();
+        self.edit_selected = Some((route, index));
+        self.rebuild();
+    }
+    fn remove_edit_point(&mut self) {
+        if let Some((route, point)) = self.edit_point() {
+            let count = self.doc.routes[route].points.len();
+            if count <= 2 {
+                self.status = "Trasa musi mieć co najmniej dwa punkty".into();
+                return;
+            }
+            self.remove_route_point(route, point);
+            // The neighbour stays chosen, so several points can be removed in a row.
+            self.edit_selected = Some((route, point.min(count - 2)));
+        }
+    }
+    /// Keyboard of the Edit tool; true when the key was used here.
+    fn edit_keys(&mut self, ctx: &egui::Context) -> bool {
+        if self.tool != Tool::Edit {
+            return false;
+        }
+        let (enter, escape, delete) = ctx.input(|i| {
+            (
+                i.key_pressed(egui::Key::Enter),
+                i.key_pressed(egui::Key::Escape),
+                i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace),
+            )
+        });
+        if self.edit_extend().is_some() && (enter || escape) {
+            self.edit_extend = None;
+            return true;
+        }
+        if delete && self.edit_extend().is_none() && self.edit_point().is_some() {
+            self.remove_edit_point();
+            return true;
+        }
+        if escape && self.edit_point().is_some() {
+            self.edit_selected = None;
+            return true;
+        }
+        enter || escape
+    }
+    /// Left panel of the Edit tool: what is chosen and what can be done with it.
+    fn edit_controls(&mut self, ui: &mut egui::Ui) {
+        let lang = self.language;
+        let route = match self.selected {
+            Some(Selection::Route(i)) if i < self.doc.routes.len() => Some(i),
+            _ => None,
+        };
+        let extending = self.edit_extend();
+        let point = self.edit_point();
+        let hint = if route.is_none() {
+            "Kliknij trasę, którą chcesz edytować."
+        } else if extending.is_some() {
+            "Klikaj na mapie, aby dodawać kolejne punkty. Enter lub Esc kończy."
+        } else if point.is_some() {
+            "Przeciągnij zaznaczony punkt, aby go przesunąć. Delete usuwa punkt, Esc odznacza."
+        } else {
+            "Kliknij punkt, aby go zaznaczyć. Plus na linii dodaje punkt między dwoma sąsiednimi."
+        };
+        ui.small(lang.tr(hint));
+        let Some(i) = route else { return };
+        let count = self.doc.routes[i].points.len();
+        ui.label(lang.tr(&format!("Trasa: {}", self.doc.routes[i].name)));
+        if let Some((_, p)) = point {
+            let q = self.doc.routes[i].points[p];
+            ui.strong(lang.tr(&format!("Zaznaczony punkt: {} z {}", p + 1, count)));
+            ui.small(format!("E {:.2}   N {:.2}", q[0], q[1]));
+            if ui.add_enabled(count > 2, egui::Button::new(lang.tr("Usuń punkt"))).clicked() {
+                self.remove_edit_point();
+            }
+        } else {
+            ui.label(lang.tr("Nie zaznaczono punktu"));
+        }
+        ui.horizontal_wrapped(|ui| {
+            if let Some((_, start)) = extending {
+                ui.strong(lang.tr(if start { "Przedłużanie od początku" } else { "Przedłużanie od końca" }));
+                if ui.button(lang.tr("Zakończ przedłużanie")).clicked() {
+                    self.edit_extend = None;
+                }
+            } else {
+                if ui.button(lang.tr("Przedłuż od początku")).clicked() {
+                    self.edit_extend = Some((i, true));
+                    self.edit_selected = Some((i, 0));
+                }
+                if ui.button(lang.tr("Przedłuż od końca")).clicked() {
+                    self.edit_extend = Some((i, false));
+                    self.edit_selected = Some((i, count - 1));
+                }
+            }
+        });
+        if !self.doc.routes[i].points.is_empty() && self.doc.routes[i].parts.is_empty() {
+            ui.small(lang.tr("Po edycji dopasuj modele lub wyznacz trasę ponownie."));
+        }
+    }
+    /// Handles of the Edit tool, with the chosen point clearly marked.
+    fn draw_edit(&self, ui: &egui::Ui, painter: &egui::Painter, rect: Rect, hover: Option<Pos2>) {
+        if self.tool != Tool::Edit {
+            return;
+        }
+        let Some(Selection::Route(route)) = self.selected else { return };
+        let Some(r) = self.doc.routes.get(route) else { return };
+        let lang = self.language;
+        let chosen = self.edit_point().map(|p| p.1);
+        let extending = self.edit_extend();
+        let mut cursor = None;
+        if extending.is_none() {
+            for (_, m) in self.edit_midpoints(route, rect) {
+                let q = self.screen(m, rect);
+                let hot = hover.is_some_and(|h| h.distance(q) < 10.);
+                if hot {
+                    cursor = Some(egui::CursorIcon::PointingHand);
+                }
+                let size = if hot { 8. } else { 6. };
+                painter.circle_filled(q, size, if hot { SELECT } else { Color32::from_rgb(38, 62, 96) });
+                painter.circle_stroke(q, size, Stroke::new(1.5_f32, SELECT));
+                let ink = if hot { Color32::BLACK } else { Color32::WHITE };
+                let arm = size * 0.55;
+                painter.line_segment([q - Vec2::new(arm, 0.), q + Vec2::new(arm, 0.)], Stroke::new(1.5_f32, ink));
+                painter.line_segment([q - Vec2::new(0., arm), q + Vec2::new(0., arm)], Stroke::new(1.5_f32, ink));
+            }
+        }
+        for (i, p) in r.points.iter().enumerate() {
+            let q = self.screen(*p, rect);
+            let near = extending.is_none() && hover.is_some_and(|h| h.distance(q) < 12.);
+            if Some(i) == chosen {
+                painter.circle_stroke(q, 13., Stroke::new(2.5_f32, SELECT));
+                painter.circle_filled(q, 8., SELECT);
+                painter.circle_stroke(q, 8., Stroke::new(1.5_f32, Color32::BLACK));
+                let label = lang.tr(&format!("Punkt {}", i + 1));
+                let at = q + Vec2::new(0., -20.);
+                let font = egui::FontId::proportional(13.);
+                let galley = painter.layout_no_wrap(label, font, Color32::BLACK);
+                let frame = Rect::from_center_size(at, galley.size() + Vec2::new(10., 4.));
+                painter.rect_filled(frame, 3., SELECT);
+                painter.galley(frame.min + Vec2::new(5., 2.), galley, Color32::BLACK);
+                if near {
+                    cursor = Some(if ui.input(|i| i.pointer.primary_down()) { egui::CursorIcon::Grabbing } else { egui::CursorIcon::Grab });
+                }
+            } else if near {
+                painter.circle_filled(q, 8., Color32::WHITE);
+                painter.circle_stroke(q, 8., Stroke::new(2.0_f32, SELECT));
+                cursor = cursor.or(Some(egui::CursorIcon::PointingHand));
+            }
+        }
+        if let (Some((_, start)), Some(h)) = (extending, hover)
+            && let Some(end) = if start { r.points.first() } else { r.points.last() }
+        {
+            painter.add(egui::Shape::dashed_line(&[self.screen(*end, rect), h], Stroke::new(2.0_f32, SELECT), 8., 6.));
+            painter.circle_stroke(h, 6., Stroke::new(2.0_f32, SELECT));
+            cursor = Some(egui::CursorIcon::Crosshair);
+        }
+        if let Some(c) = cursor {
+            ui.ctx().set_cursor_icon(c);
+        }
     }
     fn world(&self, p: Pos2, r: Rect) -> Point {
         [
@@ -2837,10 +3121,11 @@ impl Drop for App {
 impl App {
     pub fn show(&mut self, ctx: &egui::Context) {
         if !ctx.wants_keyboard_input() && self.jobs.is_empty() && self.shp_dialog.is_none() {
-            if ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
+            let edit_key = self.edit_keys(ctx);
+            if !edit_key && ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
                 self.finish();
             }
-            if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            if !edit_key && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
                 self.draft.clear();
                 self.clear_live();
             }
@@ -2895,6 +3180,12 @@ impl App {
     }
 
     /// Road and track footprints overlapping `region`, coloured as on the 2D map.
+    /// Track pieces of a project route laid on the current terrain.
+    fn track_poses(&self, id: Selection) -> Vec<dayz_road_tool::rails::Pose> {
+        let (Selection::Route(i), Some(terrain)) = (id, &self.terrain) else { return vec![] };
+        let Some(route) = self.doc.routes.get(i).filter(|r| r.rail) else { return vec![] };
+        dayz_road_tool::rails::lay_on_terrain(&route.parts, &route.extras, &self.catalog, &|p| view3d::height(terrain, p)).unwrap_or_default()
+    }
     fn road_items(&self) -> Vec<view3d::RoadItem> {
         self.previews
             .iter()
@@ -2904,6 +3195,7 @@ impl App {
                     triangles: p.shape.triangles.clone(),
                     color: [c.r(), c.g(), c.b()],
                     placements: p.shape.placements.clone(),
+                    poses: self.track_poses(p.id),
                     rigid: dayz_road_tool::rails::is_track_family(&p.family),
                     highlight: self.selected == Some(p.id),
                 }
@@ -2995,6 +3287,12 @@ impl App {
             }
             (None, Some(e)) => self.scene.enter(e, extent),
             _ => {}
+        }
+        // DAYZ_SCREENSHOT_EDIT shows the Edit tool with the second point of the first route chosen.
+        if var("DAYZ_SCREENSHOT_EDIT").is_some() && !self.doc.routes.is_empty() {
+            self.tool = Tool::Edit;
+            self.selected = Some(Selection::Route(0));
+            self.edit_selected = Some((0, 1));
         }
         // DAYZ_SCREENSHOT_2D shows the plan at the camera target instead, `distance` metres across.
         if var("DAYZ_SCREENSHOT_2D").is_some() {
@@ -3182,6 +3480,170 @@ mod tests {
         assert_eq!(restored.routes[0].replaces, Some(42));
     }
     use super::*;
+
+    #[test]
+    fn editing_needs_a_chosen_point_and_never_moves_the_whole_route() {
+        struct Map {
+            ctx: egui::Context,
+            rect: Rect,
+        }
+        impl Map {
+            fn frame(&mut self, app: &mut App, events: Vec<egui::Event>) {
+                let mut rect = self.rect;
+                let _ = self.ctx.run(
+                    egui::RawInput {
+                        screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1000., 800.))),
+                        events,
+                        ..Default::default()
+                    },
+                    |ctx| {
+                        egui::CentralPanel::default().show(ctx, |ui| {
+                            rect = ui.available_rect_before_wrap();
+                            app.edit_keys(ctx);
+                            app.map(ui);
+                        });
+                    },
+                );
+                self.rect = rect;
+            }
+            fn at(&self, app: &App, p: Point) -> Pos2 {
+                app.screen(p, self.rect)
+            }
+            fn button(pos: Pos2, pressed: bool) -> egui::Event {
+                egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() }
+            }
+            fn click(&mut self, app: &mut App, pos: Pos2) {
+                self.frame(app, vec![egui::Event::PointerMoved(pos)]);
+                self.frame(app, vec![Self::button(pos, true)]);
+                self.frame(app, vec![Self::button(pos, false)]);
+                // Clear the double-click window between clicks.
+                self.pause();
+            }
+            /// Lets the double-click window pass between gestures.
+            fn pause(&mut self) {
+                let wait = egui::RawInput {
+                    time: Some(self.ctx.input(|i| i.time) + 2.),
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1000., 800.))),
+                    ..Default::default()
+                };
+                let _ = self.ctx.run(wait, |_| {});
+            }
+            fn click_at(&mut self, app: &mut App, p: Point) {
+                let pos = self.at(app, p);
+                self.click(app, pos);
+            }
+            fn drag(&mut self, app: &mut App, from: Pos2, to: Pos2) {
+                self.frame(app, vec![egui::Event::PointerMoved(from)]);
+                self.frame(app, vec![Self::button(from, true)]);
+                let mid = from + (to - from) * 0.5;
+                self.frame(app, vec![egui::Event::PointerMoved(mid)]);
+                self.frame(app, vec![egui::Event::PointerMoved(to)]);
+                self.frame(app, vec![Self::button(to, false)]);
+                self.pause();
+            }
+            fn key(&mut self, app: &mut App, key: egui::Key) {
+                let event = |pressed| egui::Event::Key { key, physical_key: None, pressed, repeat: false, modifiers: Default::default() };
+                self.frame(app, vec![event(true)]);
+                self.frame(app, vec![event(false)]);
+            }
+        }
+        let mut app = App::initial();
+        app.center = [0., 0.];
+        app.scale = 1.;
+        app.tool = Tool::Edit;
+        let line = vec![[-200., 0.], [0., 0.], [200., 0.]];
+        app.doc.routes.push(Route {
+            name: "R".into(), family: "asf2".into(), points: line.clone(), parts: vec![],
+            replaces: None, rail: false, extras: vec![], grading: None,
+        });
+        let mut m = Map { ctx: egui::Context::default(), rect: Rect::NOTHING };
+        m.frame(&mut app, vec![]);
+        m.frame(&mut app, vec![]);
+
+        // Nothing chosen: dragging a point changes nothing.
+        let p = m.at(&app, [0., 0.]);
+        m.drag(&mut app, p, p + Vec2::new(30., 40.));
+        assert_eq!(app.doc.routes[0].points, line);
+        // The first click only chooses the route, and dragging still changes nothing.
+        m.click_at(&mut app, [-100., 0.]);
+        assert!(app.selected == Some(Selection::Route(0)));
+        assert!(app.edit_point().is_none());
+        let p = m.at(&app, [0., 0.]);
+        m.drag(&mut app, p, p + Vec2::new(30., 40.));
+        assert_eq!(app.doc.routes[0].points, line);
+        let undo = app.undo.len();
+
+        // Choose the point: a drag away from it or from another point changes nothing.
+        m.click_at(&mut app, [0., 0.]);
+        assert_eq!(app.edit_point(), Some((0, 1)));
+        let far = m.at(&app, [100., 150.]);
+        m.drag(&mut app, far, far + Vec2::new(50., 50.));
+        let other = m.at(&app, [200., 0.]);
+        m.drag(&mut app, other, other + Vec2::new(50., 50.));
+        let on_line = m.at(&app, [-120., 0.]);
+        m.drag(&mut app, on_line, on_line + Vec2::new(50., 50.));
+        assert_eq!(app.doc.routes[0].points, line, "only the chosen point moves");
+        assert_eq!(app.undo.len(), undo);
+
+        // Dragging the chosen point moves it exactly, as one undo step.
+        let p = m.at(&app, [0., 0.]);
+        m.drag(&mut app, p, p + Vec2::new(30., -40.));
+        assert_eq!(app.doc.routes[0].points[0], line[0]);
+        assert_eq!(app.doc.routes[0].points[2], line[2]);
+        let moved = app.doc.routes[0].points[1];
+        assert!((moved[0] - 30.).abs() < 1e-6 && (moved[1] - 40.).abs() < 1e-6, "{moved:?}");
+        assert_eq!(app.undo.len(), undo + 1);
+
+        // The plus between two points adds one at the middle and chooses it.
+        let middle = [100. + 15., 20.];
+        m.click_at(&mut app, middle);
+        assert_eq!(app.doc.routes[0].points.len(), 4);
+        assert_eq!(app.edit_point(), Some((0, 2)));
+        assert_eq!(app.doc.routes[0].points[2], middle);
+
+        // Delete removes the chosen point; a route keeps at least two points.
+        m.key(&mut app, egui::Key::Delete);
+        assert_eq!(app.doc.routes[0].points.len(), 3);
+        m.key(&mut app, egui::Key::Delete);
+        assert_eq!(app.doc.routes[0].points.len(), 2);
+        m.key(&mut app, egui::Key::Delete);
+        assert_eq!(app.doc.routes[0].points.len(), 2);
+
+        // Extending from the end and from the start; Escape stops it.
+        let count = app.doc.routes[0].points.len();
+        app.edit_extend = Some((0, false));
+        m.click_at(&mut app, [300., 100.]);
+        m.click_at(&mut app, [350., 150.]);
+        assert_eq!(app.doc.routes[0].points.len(), count + 2);
+        assert_eq!(app.doc.routes[0].points.last(), Some(&[350., 150.]));
+        assert_eq!(app.edit_point(), Some((0, count + 1)));
+        m.key(&mut app, egui::Key::Escape);
+        assert!(app.edit_extend().is_none());
+        app.edit_extend = Some((0, true));
+        m.click_at(&mut app, [-300., -100.]);
+        assert_eq!(app.doc.routes[0].points[0], [-300., -100.]);
+        assert_eq!(app.edit_point(), Some((0, 0)));
+        app.edit_extend = None;
+
+        // Empty map releases the point first, then the route.
+        m.click_at(&mut app, [0., 300.]);
+        assert!(app.edit_point().is_none() && app.selected.is_some());
+        m.click_at(&mut app, [0., 300.]);
+        assert!(app.selected.is_none());
+
+        // The Select tool moves a route only when the drag starts on it.
+        app.tool = Tool::Select;
+        app.selected = Some(Selection::Route(0));
+        let before = app.doc.routes[0].points.clone();
+        let empty = m.at(&app, [0., 300.]);
+        m.drag(&mut app, empty, empty + Vec2::new(50., 0.));
+        assert_eq!(app.doc.routes[0].points, before);
+        let a = app.doc.routes[0].points[0];
+        let b = app.doc.routes[0].points[1];
+        let on = m.at(&app, geometry::mul(geometry::add(a, b), 0.5));
+        m.drag(&mut app, on, on + Vec2::new(50., 0.));
+        assert!(app.doc.routes[0].points[0][0] > before[0][0] + 20.);
+    }
 
     #[test]
     fn png_scope_tracks_transformed_deleted_and_replaced_existing_roads() {

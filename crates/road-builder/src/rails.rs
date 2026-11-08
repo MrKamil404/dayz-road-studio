@@ -2,9 +2,9 @@
 //! terrain routing can chain, and export of fitted tracks as Terrain Builder objects.
 use crate::{
     document::Route,
-    geometry::{Library, Model, Point, Port, add, mul, norm, sub},
+    geometry::{Library, Model, Point, Port, add, mul, norm, rotate, sub},
     odol,
-    roads::CatalogPart,
+    roads::{CatalogPart, PlacedPart},
 };
 use anyhow::{Context, Result, bail, ensure};
 use std::{fmt::Write as _, path::Path};
@@ -262,14 +262,186 @@ pub fn catalog(folder: &Path, lib: &mut Library) -> Result<(Vec<CatalogPart>, Ve
     Ok((parts, warnings))
 }
 
-/// Terrain Builder "Import objects" text: `"name";X;Y;yaw;pitch;roll;scale;Z;` per piece,
+/// A rigid track piece in space: its origin and where its model axes point in world
+/// coordinates (x east, y north, z up).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Pose {
+    pub origin: [f64; 3],
+    pub right: [f64; 3],
+    pub forward: [f64; 3],
+    pub up: [f64; 3],
+}
+impl Pose {
+    /// World position of a model vertex (x right, y up, z forward).
+    pub fn apply(&self, v: [f32; 3]) -> [f64; 3] {
+        let (x, y, z) = (v[0] as f64, v[1] as f64, v[2] as f64);
+        std::array::from_fn(|k| self.origin[k] + self.right[k] * x + self.up[k] * y + self.forward[k] * z)
+    }
+    /// Heading clockwise from north, nose-up pitch and right-side-down roll, in degrees.
+    pub fn angles(&self) -> (f64, f64, f64) {
+        let f = self.forward;
+        let yaw = f[0].atan2(f[1]);
+        let pitch = f[2].clamp(-1., 1.).asin();
+        let level = [yaw.cos(), -yaw.sin(), 0.];
+        let lifted = cross3(level, f);
+        let roll = (-dot3(self.right, lifted)).atan2(dot3(self.right, level));
+        (yaw.to_degrees().rem_euclid(360.), pitch.to_degrees(), roll.to_degrees())
+    }
+}
+fn cross3(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+}
+fn dot3(a: [f64; 3], b: [f64; 3]) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+/// Largest difference of roll between neighbouring pieces: about 1.3 cm at the rails.
+const MAX_ROLL_STEP: f64 = 1.;
+/// Half the distance across the track over which the terrain's side slope is measured.
+const ROLL_SPAN: f64 = 2.;
+
+/// The tilt that takes a level piece to its place on the terrain.
+#[derive(Clone, Copy)]
+struct Tilt {
+    entry: Point,
+    new_entry: [f64; 3],
+    level: [[f64; 3]; 3],
+    tilted: [[f64; 3]; 3],
+    exit: Point,
+}
+impl Tilt {
+    fn turn(&self, v: [f64; 3]) -> [f64; 3] {
+        let (a, b, c) = (dot3(v, self.level[0]), dot3(v, self.level[1]), dot3(v, self.level[2]));
+        std::array::from_fn(|k| self.tilted[0][k] * a + self.tilted[1][k] * b + self.tilted[2][k] * c)
+    }
+    fn pose(&self, part: &PlacedPart) -> Pose {
+        let angle = -part.rotation.to_radians();
+        let (r, f) = (rotate([1., 0.], angle), rotate([0., 1.], angle));
+        let offset = self.turn([part.position[0] - self.entry[0], part.position[1] - self.entry[1], 0.]);
+        Pose {
+            origin: std::array::from_fn(|k| self.new_entry[k] + offset[k]),
+            right: self.turn([r[0], r[1], 0.]),
+            forward: self.turn([f[0], f[1], 0.]),
+            up: self.turn([0., 0., 1.]),
+        }
+    }
+}
+
+/// Lays a chain of rigid track pieces on the terrain. Each piece runs from the end of the
+/// previous one to the terrain at its own far end, so the centre line stays connected in
+/// space; tilted pieces cover less ground, so the chain shifts slightly along its length.
+/// Side slope turns each piece about its own chord, which leaves its ends in place, and
+/// neighbours differ by little so the rails still meet. Returns poses of `parts` then `extras`.
+pub fn lay_on_terrain(parts: &[PlacedPart], extras: &[PlacedPart], catalog: &[CatalogPart], ground: &dyn Fn(Point) -> Option<f64>) -> Result<Vec<Pose>> {
+    // Chords of the pieces as they lie on the plan.
+    let mut chords = Vec::with_capacity(parts.len());
+    for part in parts {
+        let model = &catalog.iter().find(|c| c.path == part.model).context("Brak modelu parta w katalogu")?.model;
+        let (a, b) = (
+            model.ports[usize::from(part.reverse)].context("Brak portu modelu")?,
+            model.ports[1 - usize::from(part.reverse)].context("Brak portu modelu")?,
+        );
+        let angle = -part.rotation.to_radians();
+        chords.push((add(rotate(a.p, angle), part.position), add(rotate(b.p, angle), part.position)));
+    }
+    // Side slope along the track, kept close between neighbours.
+    let mut roll: Vec<f64> = chords
+        .iter()
+        .map(|(a, b)| {
+            let c = sub(*b, *a);
+            let d = mul(c, 1. / norm(c).max(1e-9));
+            let (m, side) = (mul(add(*a, *b), 0.5), [d[1], -d[0]]);
+            match (ground(add(m, mul(side, ROLL_SPAN))), ground(sub(m, mul(side, ROLL_SPAN)))) {
+                (Some(r), Some(l)) => ((r - l) / (2. * ROLL_SPAN)).atan().to_degrees(),
+                _ => 0.,
+            }
+        })
+        .collect();
+    for i in 1..roll.len() {
+        roll[i] = roll[i].clamp(roll[i - 1] - MAX_ROLL_STEP, roll[i - 1] + MAX_ROLL_STEP);
+    }
+    for i in (0..roll.len().saturating_sub(1)).rev() {
+        roll[i] = roll[i].clamp(roll[i + 1] - MAX_ROLL_STEP, roll[i + 1] + MAX_ROLL_STEP);
+    }
+
+    let mut tilts: Vec<Tilt> = Vec::with_capacity(parts.len());
+    let mut poses = Vec::with_capacity(parts.len() + extras.len());
+    let mut shift = [0., 0.];
+    let mut previous: Option<(Point, [f64; 3])> = None;
+    for (i, (part, &(entry, exit))) in parts.iter().zip(&chords).enumerate() {
+        let start = add(entry, shift);
+        // A piece that continues the chain starts where the previous one ended.
+        let z = match previous {
+            Some((old_exit, end)) if norm(sub(old_exit, entry)) < 0.5 => end[2],
+            _ => ground(start).unwrap_or(0.),
+        };
+        let c = sub(exit, entry);
+        let length = norm(c);
+        ensure!(length > 1e-6, "Nieprawidłowa długość toru");
+        let d = mul(c, 1. / length);
+        let mut sin = 0f64;
+        for _ in 0..4 {
+            let cos = (1. - sin * sin).sqrt();
+            let end = add(start, mul(d, length * cos));
+            sin = ((ground(end).unwrap_or(z) - z) / length).clamp(-0.5, 0.5);
+        }
+        let cos = (1. - sin * sin).sqrt();
+        let chord = [d[0] * cos, d[1] * cos, sin];
+        let flat_side = [d[1], -d[0], 0.];
+        let flat_up = cross3(flat_side, chord);
+        let (sr, cr) = roll[i].to_radians().sin_cos();
+        let side: [f64; 3] = std::array::from_fn(|k| flat_side[k] * cr + flat_up[k] * sr);
+        let up = cross3(side, chord);
+        let new_entry = [start[0], start[1], z];
+        let new_exit = [start[0] + chord[0] * length, start[1] + chord[1] * length, z + sin * length];
+        let tilt = Tilt {
+            entry,
+            exit,
+            new_entry,
+            level: [flat_side, [d[0], d[1], 0.], [0., 0., 1.]],
+            tilted: [side, chord, up],
+        };
+        poses.push(tilt.pose(part));
+        tilts.push(tilt);
+        shift = [new_exit[0] - exit[0], new_exit[1] - exit[1]];
+        previous = Some((exit, new_exit));
+    }
+    // Crossing decks and other objects ride on the piece under them.
+    for extra in extras {
+        let nearest = tilts.iter().min_by(|a, b| {
+            let distance = |t: &Tilt| norm(sub(extra.position, mul(add(t.entry, t.exit), 0.5)));
+            distance(a).total_cmp(&distance(b))
+        });
+        match nearest {
+            Some(t) => poses.push(t.pose(extra)),
+            None => bail!("Brak torowiska pod obiektem przejazdu"),
+        }
+    }
+    Ok(poses)
+}
+
+/// How the signs of tilt are written to the object file.
+#[derive(Clone, Copy, Default)]
+pub struct ExportSigns {
+    pub invert_pitch: bool,
+    pub invert_roll: bool,
+}
+
+/// Tracks lie on the surface, so the underground flag that ends each object line is off.
+const UNDERGROUND: u8 = 0;
+
+/// Terrain Builder "Import objects" text: `"name";X;Y;yaw;pitch;roll;scale;Z;underground` per piece,
 /// with the heading in Terrain Builder's clockwise degrees and Z relative to the terrain.
-pub fn objects(routes: &[&Route]) -> Result<String> {
+/// Without a terrain the pieces are written level.
+pub fn objects(routes: &[&Route], catalog: &[CatalogPart], ground: Option<&dyn Fn(Point) -> Option<f64>>, signs: ExportSigns) -> Result<String> {
     let mut out = String::new();
     let mut count = 0;
     for route in routes {
         ensure!(!route.parts.is_empty(), "Torowisko {} nie ma dopasowanych segmentów", route.name);
-        for part in route.parts.iter().chain(&route.extras) {
+        let poses = match ground {
+            Some(g) => Some(lay_on_terrain(&route.parts, &route.extras, catalog, g)?),
+            None => None,
+        };
+        for (i, part) in route.parts.iter().chain(&route.extras).enumerate() {
             let name = part
                 .model
                 .rsplit(['\\', '/'])
@@ -277,17 +449,21 @@ pub fn objects(routes: &[&Route]) -> Result<String> {
                 .and_then(|f| f.rsplit_once('.').map(|(s, _)| s).or(Some(f)))
                 .context("Brak nazwy modelu toru")?
                 .to_lowercase();
-            // A reversed piece is the same object turned around.
-            let yaw = (part.rotation + if part.reverse { 180. } else { 0. }).rem_euclid(360.);
+            let (x, y, yaw, pitch, roll, z) = match poses.as_ref().map(|p| p[i]) {
+                Some(pose) => {
+                    let (yaw, pitch, roll) = pose.angles();
+                    let terrain = ground.and_then(|g| g([pose.origin[0], pose.origin[1]])).unwrap_or(pose.origin[2]);
+                    (pose.origin[0], pose.origin[1], yaw, pitch, roll, pose.origin[2] - terrain)
+                }
+                None => (part.position[0], part.position[1], part.rotation.rem_euclid(360.), 0., 0., 0.),
+            };
+            let pitch = if signs.invert_pitch { -pitch } else { pitch };
+            let roll = if signs.invert_roll { -roll } else { roll };
             ensure!(
-                part.position.iter().all(|v| v.is_finite()) && yaw.is_finite(),
+                [x, y, yaw, pitch, roll, z].iter().all(|v| v.is_finite()),
                 "Nieprawidłowa pozycja toru"
             );
-            writeln!(
-                out,
-                "\"{name}\";{:.6};{:.6};{yaw:.6};0.000000;0.000000;1.000000;0.000000;",
-                part.position[0], part.position[1]
-            )?;
+            writeln!(out, "\"{name}\";{x:.6};{y:.6};{yaw:.6};{pitch:.6};{roll:.6};1.000000;{z:.6};{UNDERGROUND}")?;
             count += 1;
         }
     }
@@ -584,7 +760,6 @@ impl Crossings {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::roads::PlacedPart;
 
     #[test]
     fn routable_pieces_and_families() {
@@ -600,7 +775,7 @@ mod tests {
     }
 
     #[test]
-    fn terrain_builder_objects_turn_reversed_pieces_around() {
+    fn terrain_builder_objects_keep_the_rotation_of_reversed_pieces() {
         let route = Route {
             name: "rail".into(),
             family: "Rail_Track".into(),
@@ -613,14 +788,115 @@ mod tests {
             rail: true, extras: vec![],
             grading: None,
         };
-        let text = objects(&[&route]).unwrap();
+        let text = objects(&[&route], &[], None, ExportSigns::default()).unwrap();
+        // The stored rotation already places the model; a reversed piece is only entered
+        // from its other end.
         assert_eq!(
             text,
-            "\"rail_track_25\";200100.500000;3000.250000;270.000000;0.000000;0.000000;1.000000;0.000000;\n\
-             \"rail_track_l25_10\";200125.000000;3000.000000;90.000000;0.000000;0.000000;1.000000;0.000000;\n"
+            "\"rail_track_25\";200100.500000;3000.250000;270.000000;0.000000;0.000000;1.000000;0.000000;0\n\
+             \"rail_track_l25_10\";200125.000000;3000.000000;270.000000;0.000000;0.000000;1.000000;0.000000;0\n"
         );
         let empty = Route { parts: vec![], ..route };
-        assert!(objects(&[&empty]).is_err());
+        assert!(objects(&[&empty], &[], None, ExportSigns::default()).is_err());
+    }
+
+    fn test_catalog() -> Vec<CatalogPart> {
+        let port = |p: Point, outward: Point| Some(crate::geometry::Port { p, outward });
+        let item = |path: &str, line: Vec<Point>, ports| CatalogPart {
+            path: path.into(),
+            family: "Rail_Track".into(),
+            category: 3,
+            index: 0,
+            road_type_index: 0,
+            model: Model { file: None, triangles: vec![], ports, line, length: 25., source: "ODOL".into() },
+        };
+        let (s, c) = (0.2f64.sin(), 0.2f64.cos());
+        vec![
+            item("s", vec![[0., -12.5], [0., 12.5]], [port([0., -12.5], [0., -1.]), port([0., 12.5], [0., 1.]), None, None]),
+            // A gentle curve to the right, about its middle.
+            item("c", vec![[-1.25, -12.4], [-1.25, 12.4]], [port([-1.25, -12.4], [s, -c]), port([-1.25, 12.4], [s, c]), None, None]),
+        ]
+    }
+    fn chain(catalog: &[CatalogPart], names: &[(&str, bool)]) -> Vec<PlacedPart> {
+        let mut at = crate::geometry::Port { p: [100., 100.], outward: [0., 1.] };
+        let mut parts = Vec::new();
+        for (name, reverse) in names {
+            let item = catalog.iter().find(|c| c.path == *name).unwrap();
+            let part = crate::roads::place(item, at, *reverse).unwrap();
+            let exit = item.model.ports[1 - usize::from(*reverse)].unwrap();
+            let angle = -part.rotation.to_radians();
+            at = crate::geometry::Port { p: add(rotate(exit.p, angle), part.position), outward: rotate(exit.outward, angle) };
+            parts.push(part);
+        }
+        parts
+    }
+    fn joints(parts: &[PlacedPart], poses: &[Pose], catalog: &[CatalogPart]) -> Vec<([f64; 3], [f64; 3])> {
+        parts
+            .iter()
+            .zip(poses)
+            .map(|(part, pose)| {
+                let m = &catalog.iter().find(|c| c.path == part.model).unwrap().model;
+                let at = |i: usize| {
+                    let p = m.ports[i].unwrap().p;
+                    pose.apply([p[0] as f32, 0., p[1] as f32])
+                };
+                (at(usize::from(part.reverse)), at(1 - usize::from(part.reverse)))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn tracks_tilt_onto_the_terrain_and_stay_connected() {
+        let catalog = test_catalog();
+        let names = [("s", false), ("c", false), ("c", true), ("s", false), ("c", false), ("s", false)];
+        let parts = chain(&catalog, &names);
+        // A slope rising to the north and east, with a bend in it.
+        let ground = |p: Point| Some(50. + 0.06 * (p[1] - 100.) + 0.03 * (p[0] - 100.) + 0.002 * (p[1] - 100.).abs());
+        let poses = lay_on_terrain(&parts, &[], &catalog, &ground).unwrap();
+        let ends = joints(&parts, &poses, &catalog);
+        for w in ends.windows(2) {
+            let gap = (0..3).map(|k| (w[0].1[k] - w[1].0[k]).powi(2)).sum::<f64>().sqrt();
+            assert!(gap < 1e-3, "pieces stay connected: {gap}");
+        }
+        for (a, b) in &ends {
+            for p in [a, b] {
+                assert!((p[2] - ground([p[0], p[1]]).unwrap()).abs() < 0.02, "joint on the ground: {p:?}");
+            }
+            // The rigid piece keeps its length in space.
+            let length = (0..3).map(|k| (b[k] - a[k]).powi(2)).sum::<f64>().sqrt();
+            assert!((length - 25.).abs() < 0.3, "{length}");
+        }
+        // A reversed piece faces against the travel, so its own roll has the opposite sign.
+        let rolls: Vec<f64> = poses.iter().zip(&parts).map(|(p, q)| if q.reverse { -p.angles().2 } else { p.angles().2 }).collect();
+        for w in rolls.windows(2) {
+            assert!((w[0] - w[1]).abs() < 1.2, "neighbours roll alike: {rolls:?}");
+        }
+        for p in &poses {
+            // The axes stay a proper rotation.
+            assert!((dot3(p.right, p.right) - 1.).abs() < 1e-9 && dot3(p.right, p.up).abs() < 1e-9 && dot3(p.up, p.forward).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn tilt_angles_follow_heading_slope_and_side_slope() {
+        let catalog = test_catalog();
+        let parts = chain(&catalog, &[("s", false)]);
+        // Rising along the track, flat across it.
+        let pose = lay_on_terrain(&parts, &[], &catalog, &|p: Point| Some(p[1] * 0.05)).unwrap()[0];
+        let (yaw, pitch, roll) = pose.angles();
+        assert!(yaw.min(360. - yaw) < 1e-6 && (pitch - 0.05f64.atan().to_degrees()).abs() < 0.01 && roll.abs() < 1e-6, "{yaw} {pitch} {roll}");
+        // Rising to the east: the right side is higher, which is a negative roll.
+        let pose = lay_on_terrain(&parts, &[], &catalog, &|p: Point| Some(p[0] * 0.05)).unwrap()[0];
+        let (_, pitch, roll) = pose.angles();
+        assert!(pitch.abs() < 1e-6 && (roll + 0.05f64.atan().to_degrees()).abs() < 0.01, "{pitch} {roll}");
+        let route = Route { name: "r".into(), family: "Rail_Track".into(), points: vec![], parts, replaces: None, rail: true, extras: vec![], grading: None };
+        let east = |p: Point| Some(p[0] * 0.05 + 10.);
+        let g: &dyn Fn(Point) -> Option<f64> = &east;
+        let plain = objects(&[&route], &catalog, Some(g), ExportSigns::default()).unwrap();
+        let flipped = objects(&[&route], &catalog, Some(g), ExportSigns { invert_pitch: false, invert_roll: true }).unwrap();
+        let field = |t: &str, i: usize| t.trim().split(';').nth(i).unwrap().parse::<f64>().unwrap();
+        assert!(field(&plain, 5) < -2.8 && field(&flipped, 5) > 2.8);
+        assert!(field(&plain, 7).abs() < 0.01, "origin stays on the ground: {plain}");
     }
 
     /// Measured geometry of the DayZ track models when the P: drive is mounted.
@@ -713,7 +989,7 @@ mod tests {
             assert!(line.windows(2).all(|w| permitted(w[0], w[1], &terrain, &s, &none)));
             assert!(parts.iter().all(|p| catalog.iter().any(|c| c.path == p.model && c.family == family)));
             let route = Route { name: "t".into(), family: family.to_owned(), points: points.to_vec(), parts: parts.clone(), replaces: None, rail: true, extras: vec![] , grading: None, };
-            assert_eq!(objects(&[&route]).unwrap().lines().count(), parts.len());
+            assert_eq!(objects(&[&route], &[], None, ExportSigns::default()).unwrap().lines().count(), parts.len());
         }
         drop(terrain);
         std::fs::remove_dir_all(dir).unwrap();

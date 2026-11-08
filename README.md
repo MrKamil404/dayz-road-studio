@@ -212,7 +212,15 @@ Both left panels include **Road type colors**. Click a type swatch to choose its
 
 ### Edit an existing drawn route
 
-Select a route on the map or in the project route list, then choose **Edit points**. Drag a point to reshape the line. Double-click a line segment to insert a point, or double-right-click a point to remove it (at least two points remain). You can select unfinished lines by clicking anywhere on the line. Drag away from handles to move the entire route. Point edits clear the previous fitted segments; use **Fit models to points** again before TV4P export. Undo/redo restores both the line and its fitted segments, and point edits are saved in the .dzroad project. This edits project route lines; imported TV4P roads retain their move/rotate controls.
+Select a route on the map or in the project route list, then choose **Edit points**. Editing goes in steps, and the left panel always says what is selected:
+
+1. Click a route to edit it. Its points and a **+** on each stretch appear.
+2. Click a point to select it. It turns yellow with a **Point N** label; only this point can be dragged, and only by grabbing it. Dragging anywhere else does nothing, so the route cannot be moved by accident.
+3. Drag the selected point to move it. **Delete** or **Remove point** removes it (a route keeps at least two points), **Esc** deselects it.
+4. Click a **+** to add a point halfway between its two neighbours, or double-click a line to add one exactly there. The new point is selected, ready to drag.
+5. **Extend from the start** or **Extend from the end** adds points by clicking the map, with a dashed line showing the next stretch. **Enter** or **Esc** finishes.
+
+Clicking the empty map deselects the point, and clicking it again deselects the route. Point edits clear the fitted segments; use **Fit models to points** or **Route across terrain** again before TV4P export. Undo/redo restores both the line and its fitted segments, and point edits are saved in the .dzroad project. This edits project route lines. To move a whole route or an imported road, use **Select** and start the drag on the selected road.
 
 See [CHANGELOG.md](CHANGELOG.md) for release changes.
 
@@ -242,7 +250,7 @@ The adaptation is temporary and belongs to the route, which is marked **ASC** in
 
 Where a track crosses a road at 60° or more on a straight, a level-crossing part is placed: `Rail_Track_Passing_25` for standard track, `Rail_Crossing_Block` decks for `Rail_TrackE` and tiled small blocks for `Rail_TrackSmall`. Barriers are not placed.
 
-**Export tracks TB…** writes the track pieces as a Terrain Builder object import file (`"name";X;Y;yaw;0;0;1;0;`), imported with **File › Import › Objects**. Tracks are not part of the TV4P road network.
+**Export tracks TB…** writes the track pieces as a Terrain Builder object import file (`"name";X;Y;yaw;pitch;roll;1;Z;0`, where the last field is the underground flag, 0 for tracks), imported with **File › Import › Objects**. Tracks are not part of the TV4P road network. Track pieces are rigid objects that do not follow the terrain in game, so each one is tilted to lie on it: it runs from the end of the previous piece to the terrain at its own far end, so the pieces stay connected, and it leans with the side slope, with neighbouring pieces differing by at most 1°. Sloped pieces cover slightly less ground, so a long chain ends a little short of its planned end (about 0.5 m per km at a 3 % grade). Export the ASC with the same adaptations, because the heights are relative to that terrain. If the tracks lean the wrong way after import, tick **Invert pitch sign** or **Invert roll sign** and export again.
 
 ### 3D view
 
@@ -251,7 +259,7 @@ The **2D | 3D** switch in the top right corner of the map opens the 3D view wher
 - The ASC terrain is drawn in tiles: near the camera at the full ASC and satellite resolution, coarser with distance, so the whole map stays visible up to the horizon. Tiles load in the background in the direction the camera looks.
 - **Satellite** drapes the imported satellite image over the terrain; without it the terrain is coloured by elevation.
 - **Water** shows a transparent plane at the water level of the **Forbidden** tool.
-- **Roads and tracks** shows the roads from the TV4P and the project routes. With **P3D models** they are drawn with their models and PAA textures. Road parts follow the terrain under every vertex. Track pieces stand level at the terrain height of their position, as the Terrain Builder export places them, so ungraded slopes show steps between pieces.
+- **Roads and tracks** shows the roads from the TV4P and the project routes. With **P3D models** they are drawn with their models and PAA textures. Road parts follow the terrain under every vertex. Track pieces are tilted onto the terrain exactly as the Terrain Builder export places them.
 - Without models, or for parts whose P3D cannot be read, the footprint is drawn in the road type colour; the selected route keeps its yellow footprint.
 - **Vertical exaggeration** (1–5×) and **Reset camera** help with flat or very large maps.
 
