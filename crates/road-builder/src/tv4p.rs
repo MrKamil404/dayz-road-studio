@@ -1074,6 +1074,7 @@ mod editor_tests {
             points,
             parts: parts.clone(),
             replaces: None, rail: false, extras: vec![],
+            grading: None,
         });
         export_editor(&base, &out, &doc, &c).unwrap();
         let b = fs::read(&out).unwrap();
@@ -1129,6 +1130,7 @@ mod editor_tests {
             points: vec![],
             parts: parts.clone(),
             replaces: None, rail: false, extras: vec![],
+            grading: None,
         });
         export_editor(&base, &out, &doc, &c).unwrap();
         let mut lib = Library::new(dir.clone());
@@ -1238,6 +1240,7 @@ mod editor_tests {
                     rotation: 0.,
                 }],
                 replaces: None, rail: false, extras: vec![],
+                grading: None,
             });
             export_editor(&base, &out, &doc, &c).unwrap();
             let output = std::fs::read(&out).unwrap();
@@ -1311,6 +1314,7 @@ mod editor_tests {
         doc.routes.push(Route {
             name: "replacement".into(), family: "asf2".into(),
             points: vec![], parts: vec![], replaces: Some(999), rail: false, extras: vec![],
+            grading: None,
         });
         assert!(export_editor(&base, &out, &doc, &[]).is_err());
         assert_eq!(fs::read(&out).unwrap(), deleted);
@@ -1338,6 +1342,7 @@ mod editor_tests {
             }],
             replaces: None,
             rail: true, extras: vec![],
+            grading: None,
         });
         // Track models are not Road Tool parts; the TV4P stays as it was.
         export_editor(&base, &out, &doc, &[]).unwrap();

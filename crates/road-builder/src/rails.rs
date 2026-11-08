@@ -611,6 +611,7 @@ mod tests {
             ],
             replaces: None,
             rail: true, extras: vec![],
+            grading: None,
         };
         let text = objects(&[&route]).unwrap();
         assert_eq!(
@@ -711,7 +712,7 @@ mod tests {
             }
             assert!(line.windows(2).all(|w| permitted(w[0], w[1], &terrain, &s, &none)));
             assert!(parts.iter().all(|p| catalog.iter().any(|c| c.path == p.model && c.family == family)));
-            let route = Route { name: "t".into(), family: family.to_owned(), points: points.to_vec(), parts: parts.clone(), replaces: None, rail: true, extras: vec![] };
+            let route = Route { name: "t".into(), family: family.to_owned(), points: points.to_vec(), parts: parts.clone(), replaces: None, rail: true, extras: vec![] , grading: None, };
             assert_eq!(objects(&[&route]).unwrap().lines().count(), parts.len());
         }
         drop(terrain);

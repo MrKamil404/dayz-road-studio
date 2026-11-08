@@ -43,6 +43,21 @@ pub struct Route {
     /// Objects along a track that are not chained pieces (level-crossing decks).
     #[serde(default)]
     pub extras: Vec<PlacedPart>,
+    /// Temporary terrain adaptation under this route. It lives with the route: the source
+    /// ASC stays untouched and removing the route restores the terrain.
+    #[serde(default)]
+    pub grading: Option<RouteGrading>,
+}
+/// Settings of a route's terrain adaptation; the cells follow from these and the route.
+#[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
+pub struct RouteGrading {
+    /// Adaptations overlap in this order; later ones win.
+    pub order: u64,
+    pub blend_width: f64,
+    pub max_grade: f64,
+    pub max_cut: f64,
+    pub max_fill: f64,
+    pub side_slope: f64,
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub struct RoutingSettings {
@@ -154,6 +169,9 @@ pub struct Document {
     /// Embankment and cut slopes when grading: horizontal metres per vertical metre.
     #[serde(default = "default_side_slope")]
     pub grading_side_slope: f64,
+    /// Generated routes adapt the terrain under them right away.
+    #[serde(default = "default_auto_grade")]
+    pub auto_grade: bool,
     pub routes: Vec<Route>,
     pub deleted: Vec<u32>,
     #[serde(default)]
@@ -183,6 +201,7 @@ impl Default for Document {
             rail_models: None,
             grading_blend_width: 0.,
             grading_side_slope: default_side_slope(),
+            auto_grade: true,
             routes: vec![],
             deleted: vec![],
             transforms: vec![],
@@ -192,6 +211,9 @@ impl Default for Document {
             road_colors: Default::default(),
         }
     }
+}
+fn default_auto_grade() -> bool {
+    true
 }
 fn default_side_slope() -> f64 {
     1.5

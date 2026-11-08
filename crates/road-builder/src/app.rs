@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, ensure};
 use dayz_road_tool::{
-    document::{Document, ForbiddenLine, Route, WaterSettings},
+    document::{Document, ForbiddenLine, Route, RouteGrading, WaterSettings},
     geometry::{self, Library, Point, Shape},
     png,
     raster::Raster,
@@ -25,6 +25,7 @@ use std::{
 const INK: Color32 = Color32::from_rgb(210, 218, 230);
 const ROAD: Color32 = Color32::from_rgb(92, 182, 236);
 const SELECT: Color32 = Color32::from_rgb(255, 216, 70);
+const COMPOSE_LABEL: &str = "Dopasowanie terenu pod trasami";
 const TRACK: Color32 = Color32::from_rgb(150, 128, 104);
 
 struct PngSettings {
@@ -62,7 +63,7 @@ enum Loaded {
     Route(usize, Vec<Point>, Vec<roads::PlacedPart>, Vec<roads::PlacedPart>),
     Export(PathBuf),
     Shp(Vec<dayz_road_tool::shapefile::Line>, String, String),
-    Graded(PathBuf, Terrain, dayz_road_tool::grading::Report),
+    Composed(dayz_road_tool::grading::Composed),
     AscExport(PathBuf),
     /// Water areas and river centre lines from SHP, with the river width.
     Water(Vec<Vec<Point>>, Vec<Vec<Point>>, f64),
@@ -198,6 +199,10 @@ pub struct App {
     /// The map shows the 3D scene instead of the 2D plan.
     view3d: bool,
     scene: view3d::Scene,
+    /// The terrain state last built or being built for the graded routes.
+    compose_key: Option<u64>,
+    /// The route grading just asked for, reported when its terrain is ready.
+    grade_request: Option<u64>,
     /// Bumped whenever the road and track previews are rebuilt.
     preview_epoch: u64,
 }
@@ -426,7 +431,7 @@ impl App {
         }
     }
     fn initial() -> Self {
-        Self {png_settings: PngSettings::default(),png_job: None,language: Default::default(),doc:Document::default(),file:None,dirty:false,undo:vec![],redo:vec![],base:None,catalog:vec![],lib:Library::new(Document::default().models),warnings:vec![],raster:None,terrain:None,terrain_dir:None,jobs:vec![],center:[207680.,7680.],scale:0.05,tool:Tool::Draw,selected:None,draft:vec![],family:String::new(),model:0,reverse:false,angle:90.,previews:vec![],index:HashMap::new(),tiles:HashMap::new(),tile_age:vec![],status:"Otwórz TV4P, wybierz modele MLOD i wczytaj mapę. Punkty trasy dodajesz kliknięciem.".into(),contours:true,interval:10.,opacity:1.,show_sat:true,show_roads:true,drag_point:None,drag_snapshot:false,contour_cache:vec![],contour_key:None,live_epoch:0,live_job:None,live_candidate:None,live_confirmed:None,live_action:None,live_tick:Instant::now()-Duration::from_secs(1),shp_dialog:None,obstacles:Default::default(),rails_request:false,show_forbidden:true,water_overlay:None,view3d:false,scene:Default::default(),preview_epoch:0}
+        Self {png_settings: PngSettings::default(),png_job: None,language: Default::default(),doc:Document::default(),file:None,dirty:false,undo:vec![],redo:vec![],base:None,catalog:vec![],lib:Library::new(Document::default().models),warnings:vec![],raster:None,terrain:None,terrain_dir:None,jobs:vec![],center:[207680.,7680.],scale:0.05,tool:Tool::Draw,selected:None,draft:vec![],family:String::new(),model:0,reverse:false,angle:90.,previews:vec![],index:HashMap::new(),tiles:HashMap::new(),tile_age:vec![],status:"Otwórz TV4P, wybierz modele MLOD i wczytaj mapę. Punkty trasy dodajesz kliknięciem.".into(),contours:true,interval:10.,opacity:1.,show_sat:true,show_roads:true,drag_point:None,drag_snapshot:false,contour_cache:vec![],contour_key:None,live_epoch:0,live_job:None,live_candidate:None,live_confirmed:None,live_action:None,live_tick:Instant::now()-Duration::from_secs(1),shp_dialog:None,obstacles:Default::default(),rails_request:false,show_forbidden:true,water_overlay:None,view3d:false,scene:Default::default(),compose_key:None,grade_request:None,preview_epoch:0}
     }
     fn checkpoint(&mut self) {
         self.undo.push(self.doc.clone());
@@ -487,6 +492,7 @@ impl App {
             self.doc.terrain_origin = d.terrain_origin;
             self.doc.grading_blend_width = d.grading_blend_width;
             self.doc.grading_side_slope = d.grading_side_slope;
+            self.doc.auto_grade = d.auto_grade;
             self.dirty = true;
             self.selected = None;
             self.rebuild();
@@ -567,6 +573,7 @@ impl App {
     }
     fn poll(&mut self) {
         self.poll_live();
+        self.sync_terrain();
         if std::mem::take(&mut self.rails_request) {
             self.load_rails(None);
         }
@@ -584,7 +591,14 @@ impl App {
             let job = self.jobs.remove(i);
             if job.cancel.load(Ordering::Relaxed) {
                 self.status = "Anulowano zadanie".into();
+                if job.label == COMPOSE_LABEL {
+                    self.abandon_grade_request();
+                    self.compose_key = None;
+                }
                 continue;
+            }
+            if job.label == COMPOSE_LABEL && r.is_err() {
+                self.abandon_grade_request();
             }
             match r {
                 Ok(Loaded::Base(path, p, c, w)) => {
@@ -646,20 +660,7 @@ impl App {
                         "ASC gotowy. Współrzędne pochodzą z nagłówka; można je dopasować w panelu."
                             .into();
                 }
-                Ok(Loaded::Graded(dir, t, report)) => {
-                    self.checkpoint();
-                    self.clear_live();
-                    self.live_epoch = self.live_epoch.wrapping_add(1);
-                    self.doc.terrain_cache = Some(dir.clone());
-                    self.doc.terrain_origin = Some([t.meta.east, t.meta.north]);
-                    self.terrain_dir = Some(dir);
-                    self.terrain = Some(t);
-                    self.contour_key = None;
-                    self.status = format!(
-                        "Zmieniono {} komórek ASC pod trasą (nasyp do {:.1} m, wykop do {:.1} m). Ctrl+Z cofa operację. Zapisz wynik przyciskiem Eksport ASC.",
-                        report.changed, report.fill, report.cut
-                    );
-                }
+                Ok(Loaded::Composed(c)) => self.finish_compose(c),
                 Ok(Loaded::AscExport(path)) => {
                     self.status = format!("Zapisano zmodyfikowany teren: {}", path.display())
                 }
@@ -669,6 +670,7 @@ impl App {
                         self.doc.routes[index].points = points;
                         self.doc.routes[index].parts = parts;
                         self.doc.routes[index].extras = extras;
+                        self.adapt_generated(index);
                         self.rebuild();
                         self.status = "Trasa wyznaczona i złożona z modeli".into();
                     }
@@ -740,6 +742,7 @@ impl App {
                             points: line.points,
                             parts: vec![],
                             replaces: None, rail: dayz_road_tool::rails::is_track_family(&family), extras: vec![],
+                            grading: None,
                         });
                     }
                     self.selected = Some(Selection::Route(first));
@@ -934,6 +937,7 @@ impl App {
                         .terrain_cache
                         .clone()
                         .filter(|_| self.terrain.is_some());
+                    self.compose_key = None;
                     if self.terrain.is_none()
                         && let Some(p) = self.doc.terrain.clone()
                     {
@@ -971,6 +975,7 @@ impl App {
             points: std::mem::take(&mut self.draft),
             parts: vec![],
             replaces: None, rail: dayz_road_tool::rails::is_track_family(&self.family), extras: vec![],
+            grading: None,
         });
         self.selected = Some(Selection::Route(index));
         self.status = "Trasa zapisana. Dopasuj modele lub uruchom automat.".into();
@@ -1051,6 +1056,10 @@ impl App {
         let (roads_near, rail_folder) = self.crossing_input();
         let dir = self.terrain_dir.clone();
         let meta = self.terrain.as_ref().map(|t| t.meta.clone());
+        // A route is planned on the terrain as it would be without its own old adaptation.
+        let without_own = (route.grading.is_some())
+            .then(|| self.doc.terrain_cache.clone().map(|base| (base, self.grading_layers_except(Some(index)))))
+            .flatten();
         self.start(
             if automatic {
                 "Szukanie trasy i dopasowanie modeli"
@@ -1058,12 +1067,7 @@ impl App {
                 "Dopasowanie modeli"
             },
             move |cancel| {
-                let terrain = dir.map(|d| Terrain::open(&d)).transpose()?.map(|mut t| {
-                    if let Some(m) = meta {
-                        t.meta = m;
-                    }
-                    t
-                });
+                let terrain = planning_terrain(dir, meta, without_own, &catalog, &cancel)?;
                 let forbidden = obstacles.get(terrain.as_ref(), &cancel)?;
                 let crossings = if route.rail {
                     dayz_road_tool::rails::Crossings::new(roads_near, &route.family, &catalog, &rail_folder)
@@ -1322,7 +1326,7 @@ if ui.button(lang.tr("Usuń ostatni punkt")).clicked(){self.draft.pop();self.cle
             }
             if self.tool==Tool::Edit {ui.small(lang.tr("Przeciągnij punkt, aby zmienić trasę. Podwójny klik na linii dodaje punkt; podwójny prawy klik na punkcie usuwa go. Po edycji dopasuj modele ponownie."));}
             ui.separator();ui.heading(lang.tr("Trasy projektu"));
-            let rows:Vec<_>=self.doc.routes.iter().enumerate().map(|(i,r)|(i,format!("{} · {} części",r.name,r.parts.len()))).collect();
+            let rows:Vec<_>=self.doc.routes.iter().enumerate().map(|(i,r)|(i,if r.grading.is_some() {format!("{} · {} części · ASC",r.name,r.parts.len())} else {format!("{} · {} części",r.name,r.parts.len())})).collect();
             egui::ScrollArea::vertical().max_height(240.).show(ui,|ui|{for (i,label) in rows {if ui.selectable_label(self.selected==Some(Selection::Route(i)),lang.tr(&label)).clicked(){self.selected=Some(Selection::Route(i));}}});
             if let Some(Selection::Route(i))=self.selected {
                 if ui.button(lang.tr("Edytuj punkty")).clicked(){self.tool=Tool::Edit;self.draft.clear();self.clear_live();}
@@ -1448,10 +1452,17 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
                                 self.doc.grading_side_slope = slope;
                             }
                         });
+                        let mut auto = self.doc.auto_grade;
+                        if ui.checkbox(&mut auto, lang.tr("Dopasowuj teren przy generowaniu tras")).on_hover_text(lang.tr("Wyznaczona lub dopasowana trasa od razu dostaje tymczasowe nasypy i wykopy; ustawienia bierze z ograniczeń trasy")).changed() {
+                            self.checkpoint();
+                            self.doc.auto_grade = auto;
+                        }
                         let can_grade = self.terrain.is_some() && self.draft.is_empty() && matches!(self.selected, Some(Selection::Route(i)) if !self.doc.routes[i].parts.is_empty());
                         if ui.add_enabled(can_grade, egui::Button::new(lang.tr("Dopasuj ASC pod wybraną trasą"))).clicked() { self.grade_asc(); }
+                        let graded = matches!(self.selected, Some(Selection::Route(i)) if self.doc.routes[i].grading.is_some());
+                        if ui.add_enabled(graded, egui::Button::new(lang.tr("Usuń dopasowanie terenu"))).clicked() { self.remove_grading(); }
                         if ui.add_enabled(self.terrain.is_some(), egui::Button::new(lang.tr("Eksport ASC…"))).clicked() { self.export_asc(); }
-                        ui.small(lang.tr("Ctrl+Z cofa modyfikację terenu. Źródłowy ASC pozostaje zachowany."));
+                        ui.small(lang.tr("Dopasowanie jest tymczasowe: należy do trasy, a jej usunięcie przywraca teren. Źródłowy ASC się nie zmienia; Eksport ASC zapisuje teren z dopasowaniami do nowego pliku."));
                         ui.separator();
                         for (heading, rail) in [("Ograniczenia drogi", false), ("Ograniczenia torowiska", true)] {
                             ui.heading(lang.tr(heading));
@@ -1661,8 +1672,10 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
             points: std::mem::take(&mut self.draft),
             parts: g.parts,
             replaces: None, rail: dayz_road_tool::rails::is_track_family(&self.family), extras: vec![],
+            grading: None,
         });
         self.selected = Some(Selection::Route(i));
+        self.adapt_generated(i);
         self.clear_live();
         self.rebuild();
         self.status =
@@ -1903,38 +1916,206 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
             self.status = "Wybierz trasę projektu z wygenerowanymi partami".into();
             return;
         };
-        let parts = self.doc.routes[i].parts.clone();
-        if parts.is_empty() {
+        if self.doc.routes[i].parts.is_empty() {
             self.status = "Najpierw dopasuj modele do wybranej trasy".into();
             return;
         }
-        let (Some(dir), Some(meta)) = (
-            self.terrain_dir.clone(),
-            self.terrain.as_ref().map(|t| t.meta.clone()),
-        ) else {
+        if self.terrain.is_none() {
             self.status = "Wczytaj wysokości ASC".into();
             return;
-        };
-        let catalog = self.catalog.clone();
-        self.clear_live();
-        let blend_width = self.doc.grading_blend_width;
+        }
+        let grading = self.new_grading(i);
+        let order = grading.order;
+        if self.doc.routes[i].grading == Some(grading) {
+            self.status = "Teren pod tą trasą jest już dopasowany tymi ustawieniami".into();
+            return;
+        }
+        self.checkpoint();
+        self.doc.routes[i].grading = Some(grading);
+        self.grade_request = Some(order);
+        self.status = "Dopasowywanie terenu pod trasą…".into();
+    }
+    /// Terrain adaptation of a route under the current settings; a route that already has
+    /// one keeps its place among the overlapping adaptations.
+    fn new_grading(&self, i: usize) -> RouteGrading {
         // The road or track profile keeps the route's own limits.
         let s = if self.doc.routes[i].rail { &self.doc.rail_routing } else { &self.doc.routing };
-        let earthwork = dayz_road_tool::grading::Earthwork {
+        RouteGrading {
+            order: self.doc.routes[i].grading.map_or_else(
+                || self.doc.routes.iter().filter_map(|r| r.grading.map(|g| g.order)).max().map_or(1, |o| o + 1),
+                |g| g.order,
+            ),
+            blend_width: self.doc.grading_blend_width,
             max_grade: s.max_grade,
             max_cut: s.max_cut,
             max_fill: s.max_fill,
             side_slope: self.doc.grading_side_slope,
+        }
+    }
+    /// A freshly generated route brings its cuts and embankments into the terrain.
+    fn adapt_generated(&mut self, i: usize) {
+        if self.doc.auto_grade && self.terrain.is_some() && self.doc.terrain_cache.is_some() && !self.doc.routes[i].parts.is_empty() {
+            let grading = self.new_grading(i);
+            self.doc.routes[i].grading = Some(grading);
+            self.grade_request = Some(grading.order);
+        }
+    }
+    fn remove_grading(&mut self) {
+        if let Some(Selection::Route(i)) = self.selected
+            && self.doc.routes[i].grading.is_some()
+        {
+            self.checkpoint();
+            self.doc.routes[i].grading = None;
+            self.status = "Usunięto dopasowanie terenu pod trasą".into();
+        }
+    }
+    /// Graded routes as layers over the source ASC.
+    fn grading_layers(&self) -> Vec<dayz_road_tool::grading::Layer> {
+        self.grading_layers_except(None)
+    }
+    fn grading_layers_except(&self, skip: Option<usize>) -> Vec<dayz_road_tool::grading::Layer> {
+        self.doc
+            .routes
+            .iter()
+            .enumerate()
+            .filter(|(i, r)| Some(*i) != skip && !r.parts.is_empty())
+            .filter_map(|(_, r)| {
+                r.grading.map(|g| dayz_road_tool::grading::Layer {
+                    order: g.order,
+                    parts: r.parts.clone(),
+                    blend_width: g.blend_width,
+                    earthwork: dayz_road_tool::grading::Earthwork {
+                        max_grade: g.max_grade,
+                        max_cut: g.max_cut,
+                        max_fill: g.max_fill,
+                        side_slope: g.side_slope,
+                    },
+                })
+            })
+            .collect()
+    }
+    /// Identifies the terrain the current routes call for.
+    fn compose_key(&self, layers: &[dayz_road_tool::grading::Layer]) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        self.doc.terrain_cache.hash(&mut h);
+        self.doc.terrain_origin.map(|p| p.map(f64::to_bits)).hash(&mut h);
+        layers.len().hash(&mut h);
+        if !layers.is_empty() {
+            // Layers left out for missing models are retried once the models arrive.
+            self.catalog.len().hash(&mut h);
+        }
+        for l in layers {
+            l.order.hash(&mut h);
+            let e = &l.earthwork;
+            [l.blend_width, e.max_grade, e.max_cut, e.max_fill, e.side_slope].map(f64::to_bits).hash(&mut h);
+            for p in &l.parts {
+                p.model.hash(&mut h);
+                p.reverse.hash(&mut h);
+                [p.position[0], p.position[1], p.rotation].map(f64::to_bits).hash(&mut h);
+            }
+        }
+        h.finish()
+    }
+    /// Keeps the terrain in step with the routes: the source ASC plus every graded route.
+    fn sync_terrain(&mut self) {
+        if !self.jobs.is_empty() || self.live_job.is_some() {
+            return;
+        }
+        let (Some(base), Some(meta)) = (self.doc.terrain_cache.clone(), self.terrain.as_ref().map(|t| t.meta.clone())) else {
+            return;
         };
-        self.start("Modyfikacja ASC pod partami", move |cancel| {
-            let mut terrain = Terrain::open(&dir)?;
-            terrain.meta = meta;
-            let output = Self::cache_dir("asc-graded")?;
-            let (t, report) = dayz_road_tool::grading::apply_earthwork(
-                &terrain, &parts, &catalog, &output, &cancel, blend_width, &earthwork,
-            )?;
-            Ok(Loaded::Graded(output, t, report))
+        let layers = self.grading_layers();
+        let key = self.compose_key(&layers);
+        if self.compose_key == Some(key) {
+            self.grade_request = None;
+            return;
+        }
+        self.compose_key = Some(key);
+        if layers.is_empty() {
+            // No adaptations left: back to the source terrain.
+            if self.terrain_dir.as_ref() != Some(&base)
+                && let Ok(mut t) = Terrain::open(&base)
+            {
+                t.meta = meta;
+                self.terrain = Some(t);
+                self.terrain_dir = Some(base);
+                self.terrain_changed();
+                self.status = "Przywrócono teren pod usuniętymi trasami".into();
+            }
+            return;
+        }
+        let catalog = self.catalog.clone();
+        self.start(COMPOSE_LABEL, move |cancel| {
+            let cache = Self::compose_cache()?;
+            Ok(Loaded::Composed(dayz_road_tool::grading::compose(&base, &meta, &layers, &catalog, &cache, &cancel)?))
         });
+    }
+    fn compose_cache() -> Result<PathBuf> {
+        Ok(if cfg!(test) {
+            std::env::temp_dir().join(format!("road-compose-{}", std::process::id()))
+        } else {
+            std::env::current_dir()?.join(".road-cache")
+        })
+    }
+    fn terrain_changed(&mut self) {
+        self.clear_live();
+        self.live_epoch = self.live_epoch.wrapping_add(1);
+        self.contour_key = None;
+    }
+    /// A grading that was cancelled or failed as a whole is not kept on its route.
+    fn abandon_grade_request(&mut self) {
+        if let Some(order) = self.grade_request.take() {
+            for r in &mut self.doc.routes {
+                if r.grading.is_some_and(|g| g.order == order) {
+                    r.grading = None;
+                }
+            }
+        }
+    }
+    fn finish_compose(&mut self, c: dayz_road_tool::grading::Composed) {
+        let changed = self.terrain_dir.as_ref() != Some(&c.dir);
+        self.terrain_dir = Some(c.dir);
+        self.terrain = Some(c.terrain);
+        if changed {
+            self.terrain_changed();
+        }
+        let name = |doc: &Document, order: u64| {
+            doc.routes.iter().find(|r| r.grading.is_some_and(|g| g.order == order)).map(|r| r.name.clone()).unwrap_or_default()
+        };
+        let request = self.grade_request.take();
+        let mut message = None;
+        if let Some(order) = request
+            && let Some((_, report)) = c.reports.iter().find(|(o, _)| *o == order)
+        {
+            message = Some(format!(
+                "Dopasowano teren pod trasą: {} komórek ASC (nasyp do {:.1} m, wykop do {:.1} m). Usunięcie trasy przywróci teren.",
+                report.changed, report.fill, report.cut
+            ));
+        } else if changed {
+            message = Some(format!("Zaktualizowano teren pod trasami: {}", c.reports.len()));
+        }
+        if let Some(order) = c.skipped.first() {
+            message = Some(format!("Pominięto dopasowanie terenu pod trasą {}: brak wczytanych modeli", name(&self.doc, *order)));
+        }
+        if let Some((order, reason)) = c.failed.first() {
+            message = Some(format!("Nie udało się dopasować terenu pod trasą {}: {reason}", name(&self.doc, *order)));
+        }
+        for (order, _) in &c.failed {
+            for r in &mut self.doc.routes {
+                if r.grading.is_some_and(|g| g.order == *order) {
+                    r.grading = None;
+                    self.dirty = true;
+                }
+            }
+        }
+        if !c.failed.is_empty() {
+            let layers = self.grading_layers();
+            self.compose_key = Some(self.compose_key(&layers));
+        }
+        if let Some(m) = message {
+            self.status = m;
+        }
     }
     fn export_asc(&mut self) {
         let lang = self.language;
@@ -2254,6 +2435,7 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
                             points: vec![world],
                             parts: vec![],
                             replaces: None, rail: dayz_road_tool::rails::is_track_family(&self.family), extras: vec![],
+                            grading: None,
                         });
                         self.selected = Some(Selection::Route(i));
                         self.add_segment();
@@ -2790,6 +2972,7 @@ impl App {
                         replaces: None,
                         rail: true,
                         extras: planned.extras,
+                        grading: None,
                     }),
                     Err(e) => eprintln!("track: {e:#}"),
                 }
@@ -2938,6 +3121,26 @@ impl App {
         self.scene = scene;
     }
 }
+/// The terrain a route is planned on: the current one, or the source ASC with the other
+/// routes' adaptations when the route has an adaptation of its own.
+fn planning_terrain(
+    dir: Option<PathBuf>,
+    meta: Option<dayz_road_tool::terrain::Meta>,
+    without_own: Option<(PathBuf, Vec<dayz_road_tool::grading::Layer>)>,
+    catalog: &[CatalogPart],
+    cancel: &AtomicBool,
+) -> Result<Option<Terrain>> {
+    if let (Some((base, layers)), Some(m)) = (without_own, &meta) {
+        let cache = App::compose_cache()?;
+        return Ok(Some(dayz_road_tool::grading::compose(&base, m, &layers, catalog, &cache, cancel)?.terrain));
+    }
+    Ok(dir.map(|d| Terrain::open(&d)).transpose()?.map(|mut t| {
+        if let Some(m) = meta {
+            t.meta = m;
+        }
+        t
+    }))
+}
 fn distance_to_segment(p: Pos2, a: Pos2, b: Pos2) -> f32 {
     let d = b - a;
     let t = ((p - a).dot(d) / d.length_sq().max(1e-6)).clamp(0., 1.);
@@ -2956,6 +3159,7 @@ mod tests {
                 model: "asf2_25.p3d".into(), reverse: false,
                 position: [0., 0.], rotation: 0.,
             }], replaces: Some(42), rail: false, extras: vec![],
+            grading: None,
         });
         app.insert_route_point(0, 0, [50., 10.]);
         assert_eq!(app.doc.routes[0].points, vec![[0., 0.], [50., 10.], [100., 0.]]);
@@ -3015,6 +3219,7 @@ mod tests {
             points: vec![start],
             parts: vec![],
             replaces: Some(9), rail: false, extras: vec![],
+            grading: None,
         });
         app.rebuild();
         assert!(app.png_previews().is_empty());
@@ -3508,51 +3713,147 @@ mod tests {
     }
 
     #[test]
-    fn graded_terrain_undo_redo_restores_cache_and_saved_project() {
+    fn grading_is_temporary_follows_undo_and_disappears_with_the_route() {
         let root = std::env::temp_dir().join(format!("road-grade-ui-{}", std::process::id()));
-        let old = root.join("old");
-        let new = root.join("new");
-        for (dir, z) in [(&old, 10f32), (&new, 20f32)] {
-            std::fs::create_dir_all(dir).unwrap();
-            std::fs::write(
-                dir.join("terrain.json"),
-                r#"{"cols":2,"rows":2,"east":100.0,"north":200.0,"cell":1.0}"#,
-            )
-            .unwrap();
-            std::fs::write(dir.join("height.f32"), z.to_le_bytes().repeat(4)).unwrap();
+        let _ = std::fs::remove_dir_all(&root);
+        let base = root.join("base");
+        std::fs::create_dir_all(&base).unwrap();
+        // 64 x 64 m at 100 m with a 2 m deep ditch across the middle.
+        std::fs::write(base.join("terrain.json"), r#"{"cols":64,"rows":64,"east":0.0,"north":0.0,"cell":1.0}"#).unwrap();
+        let mut bytes = Vec::new();
+        for y in 0..64 {
+            for x in 0..64 {
+                let north = 63.5 - y as f64;
+                let z: f32 = if (29. ..35.).contains(&north) && x > 10 && x < 54 { 98. } else { 100. };
+                bytes.extend(z.to_le_bytes());
+            }
         }
+        std::fs::write(base.join("height.f32"), &bytes).unwrap();
         let mut app = App::initial();
         app.tool = Tool::Select;
-        app.doc.terrain_cache = Some(old.clone());
-        app.doc.terrain_origin = Some([100., 200.]);
-        app.terrain_dir = Some(old.clone());
-        app.terrain = Some(Terrain::open(&old).unwrap());
-        let (tx, rx) = mpsc::channel();
-        tx.send(Ok(Loaded::Graded(
-            new.clone(),
-            Terrain::open(&new).unwrap(),
-            dayz_road_tool::grading::Report { changed: 4, ..Default::default() },
-        )))
-        .unwrap();
-        app.jobs.push(Job {
-            rx,
-            cancel: Arc::new(AtomicBool::new(false)),
-            label: "ASC".into(),
+        app.doc.terrain_cache = Some(base.clone());
+        app.doc.terrain_origin = Some([0., 0.]);
+        app.terrain_dir = Some(base.clone());
+        app.terrain = Some(Terrain::open(&base).unwrap());
+        app.doc.routing.max_grade = 5.;
+        app.doc.routing.max_fill = 2.5;
+        app.catalog = vec![CatalogPart {
+            path: "strip.p3d".into(),
+            family: "test".into(),
+            category: 3,
+            index: 0,
+            road_type_index: 0,
+            model: geometry::Model {
+                file: None,
+                triangles: vec![[[-2., 0.], [2., 0.], [2., 50.]], [[-2., 0.], [2., 50.], [-2., 50.]]],
+                ports: [None; 4],
+                line: vec![[0., 0.], [0., 50.]],
+                length: 50.,
+                source: "ODOL".into(),
+            },
+        }];
+        app.doc.routes.push(Route {
+            name: "Road".into(),
+            family: "test".into(),
+            points: vec![[32., 7.], [32., 57.]],
+            parts: vec![roads::PlacedPart { model: "strip.p3d".into(), reverse: false, position: [32., 7.], rotation: 0. }],
+            replaces: None,
+            rail: false,
+            extras: vec![],
+            grading: None,
         });
-        app.poll();
-        assert_eq!(app.terrain.as_ref().unwrap().value(0, 0), Some(20.));
-        app.undo(false);
-        assert_eq!(app.doc.terrain_cache, Some(old));
-        assert_eq!(app.terrain.as_ref().unwrap().value(0, 0), Some(10.));
-        assert_eq!(app.terrain.as_ref().unwrap().point(0, 0), [100.5, 201.5]);
-        app.undo(true);
-        assert_eq!(app.doc.terrain_cache, Some(new.clone()));
-        assert_eq!(app.terrain.as_ref().unwrap().value(0, 0), Some(20.));
+        app.selected = Some(Selection::Route(0));
+        let settle = |app: &mut App| {
+            for _ in 0..500 {
+                app.poll();
+                if app.jobs.is_empty() {
+                    app.poll();
+                    if app.jobs.is_empty() {
+                        return;
+                    }
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            panic!("terrain job did not finish");
+        };
+        let height = |app: &App| app.terrain.as_ref().unwrap().value(32, 63 - 32).unwrap();
+        settle(&mut app);
+        assert_eq!(height(&app), 98.);
+
+        app.grade_asc();
+        settle(&mut app);
+        assert!(height(&app) > 99.5, "{} ({})", height(&app), app.status);
+        assert_eq!(app.doc.terrain_cache, Some(base.clone()), "the project keeps the source ASC");
+        assert_ne!(app.terrain_dir, Some(base.clone()));
+        assert_eq!(std::fs::read(base.join("height.f32")).unwrap(), bytes);
         let saved = root.join("test.dzroad");
         app.doc.save(&saved).unwrap();
-        let loaded: Document = serde_json::from_slice(&std::fs::read(saved).unwrap()).unwrap();
-        assert_eq!(loaded.terrain_cache, Some(new));
+        let loaded: Document = serde_json::from_slice(&std::fs::read(&saved).unwrap()).unwrap();
+        assert_eq!(loaded.terrain_cache, Some(base.clone()));
+        assert!(loaded.routes[0].grading.is_some());
+
+        app.undo(false);
+        settle(&mut app);
+        assert_eq!((height(&app), app.terrain_dir.clone()), (98., Some(base.clone())));
+        app.undo(true);
+        settle(&mut app);
+        assert!(height(&app) > 99.5);
+
+        // Removing only the adaptation, then putting it back and deleting the route.
+        app.selected = Some(Selection::Route(0));
+        app.remove_grading();
+        settle(&mut app);
+        assert_eq!(height(&app), 98.);
+        app.undo(false);
+        settle(&mut app);
+        assert!(height(&app) > 99.5);
+
+        app.selected = Some(Selection::Route(0));
+        app.delete();
+        settle(&mut app);
+        assert_eq!(app.terrain_dir, Some(base.clone()));
+        let t = app.terrain.as_ref().unwrap();
+        let restored: Vec<u8> = (0..64 * 64).flat_map(|i| (t.value(i % 64, i / 64).unwrap() as f32).to_le_bytes()).collect();
+        assert_eq!(restored, bytes, "deleting the route restores every cell");
+        app.undo(false);
+        settle(&mut app);
+        assert!(height(&app) > 99.5, "undoing the deletion brings the adaptation back");
+
+        // Planning a graded route ignores its own adaptation; the others stay.
+        let own = Some((base.clone(), app.grading_layers_except(Some(0))));
+        let meta = app.terrain.as_ref().map(|t| t.meta.clone());
+        let flag = AtomicBool::new(false);
+        let planned = planning_terrain(app.terrain_dir.clone(), meta, own, &app.catalog, &flag).unwrap().unwrap();
+        assert_eq!(planned.value(32, 63 - 32), Some(98.));
+        drop(planned);
+
+        // A route that comes back from generation adapts the terrain in one undo step.
+        let part = app.doc.routes[0].parts.clone();
+        app.doc.routes[0].grading = None;
+        app.doc.routes[0].parts.clear();
+        settle(&mut app);
+        assert_eq!(height(&app), 98.);
+        let deliver = |app: &mut App, parts: Vec<roads::PlacedPart>| {
+            let (tx, rx) = mpsc::channel();
+            let points = app.doc.routes[0].points.clone();
+            tx.send(Ok(Loaded::Route(0, points, parts, vec![]))).unwrap();
+            app.jobs.push(Job { rx, cancel: Arc::new(AtomicBool::new(false)), label: "route".into() });
+        };
+        deliver(&mut app, part.clone());
+        settle(&mut app);
+        assert!(app.doc.routes[0].grading.is_some());
+        assert!(height(&app) > 99.5, "{}", app.status);
+        assert!(app.status.contains("Dopasowano"), "{}", app.status);
+        app.undo(false);
+        settle(&mut app);
+        assert!(app.doc.routes[0].parts.is_empty() && app.doc.routes[0].grading.is_none());
+        assert_eq!(height(&app), 98.);
+        app.doc.auto_grade = false;
+        deliver(&mut app, part);
+        settle(&mut app);
+        assert!(app.doc.routes[0].grading.is_none());
+        assert_eq!(height(&app), 98.);
         drop(app);
-        std::fs::remove_dir_all(root).unwrap();
+        let _ = std::fs::remove_dir_all(root);
     }
 }

@@ -2138,5 +2138,65 @@
   {
     "pl": "Nieobsługiwana kompresja PAA",
     "en": "Unsupported PAA compression"
+  },
+  {
+    "pl": "{0} · {1} części · ASC",
+    "en": "{0} · {1} parts · ASC"
+  },
+  {
+    "pl": "Usuń dopasowanie terenu",
+    "en": "Remove terrain adaptation"
+  },
+  {
+    "pl": "Dopasowanie jest tymczasowe: należy do trasy, a jej usunięcie przywraca teren. Źródłowy ASC się nie zmienia; Eksport ASC zapisuje teren z dopasowaniami do nowego pliku.",
+    "en": "The adaptation is temporary: it belongs to the route and deleting the route restores the terrain. The source ASC does not change; Export ASC writes the terrain with its adaptations to a new file."
+  },
+  {
+    "pl": "Teren pod tą trasą jest już dopasowany tymi ustawieniami",
+    "en": "The terrain under this route is already adapted with these settings"
+  },
+  {
+    "pl": "Dopasowywanie terenu pod trasą…",
+    "en": "Adapting the terrain under the route…"
+  },
+  {
+    "pl": "Usunięto dopasowanie terenu pod trasą",
+    "en": "Removed the terrain adaptation under the route"
+  },
+  {
+    "pl": "Przywrócono teren pod usuniętymi trasami",
+    "en": "Restored the terrain under removed routes"
+  },
+  {
+    "pl": "Dopasowano teren pod trasą: {0} komórek ASC (nasyp do {1} m, wykop do {2} m). Usunięcie trasy przywróci teren.",
+    "en": "Adapted the terrain under the route: {0} ASC cells (fill up to {1} m, cut up to {2} m). Deleting the route restores the terrain."
+  },
+  {
+    "pl": "Zaktualizowano teren pod trasami: {0}",
+    "en": "Updated the terrain under routes: {0}"
+  },
+  {
+    "pl": "Pominięto dopasowanie terenu pod trasą {0}: brak wczytanych modeli",
+    "en": "Skipped the terrain adaptation under route {0}: its models are not loaded"
+  },
+  {
+    "pl": "Nie udało się dopasować terenu pod trasą {0}: {1}",
+    "en": "Could not adapt the terrain under route {0}: {1}"
+  },
+  {
+    "pl": "Nie można odczytać wysokości ASC",
+    "en": "Cannot read the ASC heights"
+  },
+  {
+    "pl": "Dopasowanie terenu pod trasami",
+    "en": "Adapting the terrain under routes"
+  },
+  {
+    "pl": "Dopasowuj teren przy generowaniu tras",
+    "en": "Adapt the terrain when generating routes"
+  },
+  {
+    "pl": "Wyznaczona lub dopasowana trasa od razu dostaje tymczasowe nasypy i wykopy; ustawienia bierze z ograniczeń trasy",
+    "en": "A routed or fitted route immediately gets temporary embankments and cuts, using the limits of its constraints"
   }
 ]

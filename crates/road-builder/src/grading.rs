@@ -2,14 +2,14 @@
 use crate::{
     geometry::{Point, Shape, add, mul, norm, sub},
     roads::{CatalogPart, PlacedPart},
-    terrain::Terrain,
+    terrain::{Meta, Terrain},
 };
 use anyhow::{Context, Result, bail, ensure};
 use std::{
     collections::HashMap,
     fs::File,
     io::{BufWriter, Write},
-    path::Path,
+    path::{Path, PathBuf},
     sync::atomic::{AtomicBool, Ordering},
 };
 
@@ -288,6 +288,200 @@ pub struct Report {
     pub fill: f64,
     pub cut: f64,
     pub length: f64,
+}
+
+/// One route's temporary terrain adaptation.
+#[derive(Clone)]
+pub struct Layer {
+    pub order: u64,
+    pub parts: Vec<PlacedPart>,
+    pub blend_width: f64,
+    pub earthwork: Earthwork,
+}
+/// The base terrain with the adaptations laid over it.
+pub struct Composed {
+    pub dir: PathBuf,
+    pub terrain: Terrain,
+    pub reports: Vec<(u64, Report)>,
+    /// Adaptations that cannot be built, with the reason.
+    pub failed: Vec<(u64, String)>,
+    /// Adaptations left out for now because their models are not loaded.
+    pub skipped: Vec<u64>,
+}
+
+const COMPOSITE: &str = "asc-composite-";
+
+/// Changed cells of one adaptation: index and new height.
+struct Patch {
+    report: Report,
+    cells: Vec<(u32, f32)>,
+}
+impl Patch {
+    fn read(path: &Path) -> Option<Self> {
+        let b = std::fs::read(path).ok()?;
+        let (head, rest) = (b.get(..32)?, b.get(32..)?);
+        let f = |i: usize| f64::from_le_bytes(head[i * 8..i * 8 + 8].try_into().unwrap());
+        if rest.len() % 8 != 0 || f(0) as usize != rest.len() / 8 {
+            return None;
+        }
+        let cells = rest
+            .chunks_exact(8)
+            .map(|c| (u32::from_le_bytes(c[..4].try_into().unwrap()), f32::from_le_bytes(c[4..].try_into().unwrap())))
+            .collect();
+        Some(Self { report: Report { changed: f(0) as usize, fill: f(1), cut: f(2), length: f(3) }, cells })
+    }
+    fn write(&self, path: &Path) -> Result<()> {
+        let mut b = Vec::with_capacity(32 + self.cells.len() * 8);
+        for v in [self.cells.len() as f64, self.report.fill, self.report.cut, self.report.length] {
+            b.extend(v.to_le_bytes());
+        }
+        for (i, z) in &self.cells {
+            b.extend(i.to_le_bytes());
+            b.extend(z.to_le_bytes());
+        }
+        crate::storage::atomic_write(path, &b)
+    }
+}
+
+fn write_heights(dir: &Path, meta: &Meta, cells: &[f32]) -> Result<()> {
+    std::fs::create_dir_all(dir)?;
+    let mut out = BufWriter::new(File::create(dir.join("height.f32"))?);
+    for z in cells {
+        out.write_all(&z.to_le_bytes())?;
+    }
+    out.flush()?;
+    drop(out);
+    crate::storage::atomic_write(&dir.join("terrain.json"), &serde_json::to_vec(meta)?)
+}
+
+/// World box a layer can change, generous enough for its embankments and cuts.
+fn layer_bounds(layer: &Layer, cell: f64) -> [f64; 4] {
+    let e = &layer.earthwork;
+    let reach = layer.blend_width + (e.max_cut.max(e.max_fill) * 2. + 20.) * e.side_slope + cell * 3. + 50.;
+    let mut b = [f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
+    for p in &layer.parts {
+        b = [b[0].min(p.position[0]), b[1].min(p.position[1]), b[2].max(p.position[0]), b[3].max(p.position[1])];
+    }
+    [b[0] - reach, b[1] - reach, b[2] + reach, b[3] + reach]
+}
+
+/// Lays route adaptations over the unchanged `base` terrain and returns the result. Each
+/// adaptation is cached in `cache` by what determines it (the base, the route, its settings
+/// and the earlier adaptations it overlaps), so removing a route reuses every unrelated one.
+pub fn compose(base: &Path, meta: &Meta, layers: &[Layer], catalog: &[CatalogPart], cache: &Path, cancel: &AtomicBool) -> Result<Composed> {
+    use std::hash::{Hash, Hasher};
+    let raw = std::fs::read(base.join("height.f32")).context("Nie można odczytać wysokości ASC")?;
+    ensure!(raw.len() == meta.cols * meta.rows * 4, "Uszkodzona pamięć podręczna ASC");
+    let mut cells: Vec<f32> = raw.chunks_exact(4).map(|c| f32::from_le_bytes(c.try_into().unwrap())).collect();
+    drop(raw);
+    std::fs::create_dir_all(cache)?;
+    let mut base_key = std::collections::hash_map::DefaultHasher::new();
+    base.hash(&mut base_key);
+    [meta.east, meta.north, meta.cell].map(f64::to_bits).hash(&mut base_key);
+    let base_key = base_key.finish();
+
+    let mut sorted: Vec<&Layer> = layers.iter().collect();
+    sorted.sort_by_key(|l| l.order);
+    let mut applied: Vec<(u64, [f64; 4])> = Vec::new();
+    let (mut reports, mut failed, mut skipped) = (Vec::new(), Vec::new(), Vec::new());
+    for layer in sorted {
+        ensure!(!cancel.load(Ordering::Relaxed), "Modyfikacja ASC anulowana");
+        let bounds = layer_bounds(layer, meta.cell);
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        base_key.hash(&mut h);
+        for p in &layer.parts {
+            p.model.hash(&mut h);
+            p.reverse.hash(&mut h);
+            [p.position[0], p.position[1], p.rotation].map(f64::to_bits).hash(&mut h);
+        }
+        let e = &layer.earthwork;
+        [layer.blend_width, e.max_grade, e.max_cut, e.max_fill, e.side_slope].map(f64::to_bits).hash(&mut h);
+        for (key, b) in &applied {
+            if b[0] <= bounds[2] && bounds[0] <= b[2] && b[1] <= bounds[3] && bounds[1] <= b[3] {
+                key.hash(&mut h);
+            }
+        }
+        let key = h.finish();
+        let file = cache.join(format!("asc-patch-{key:016x}.bin"));
+        let patch = match Patch::read(&file) {
+            Some(p) => p,
+            None => {
+                if !layer.parts.iter().all(|p| catalog.iter().any(|c| c.path == p.model)) {
+                    skipped.push(layer.order);
+                    continue;
+                }
+                let work = cache.join(format!("asc-work-{key:016x}-{}", std::process::id()));
+                write_heights(&work, meta, &cells)?;
+                let result = (|| -> Result<Patch> {
+                    let source = Terrain::open(&work)?;
+                    let out = work.join("out");
+                    let (graded, report) = apply_earthwork(&source, &layer.parts, catalog, &out, cancel, layer.blend_width, e)?;
+                    drop((graded, source));
+                    let new = std::fs::read(out.join("height.f32"))?;
+                    let changed: Vec<(u32, f32)> = new
+                        .chunks_exact(4)
+                        .enumerate()
+                        .filter_map(|(i, c)| {
+                            let z = f32::from_le_bytes(c.try_into().unwrap());
+                            (z.to_bits() != cells[i].to_bits()).then_some((i as u32, z))
+                        })
+                        .collect();
+                    Ok(Patch { report: Report { changed: changed.len(), ..report }, cells: changed })
+                })();
+                let _ = std::fs::remove_dir_all(&work);
+                match result {
+                    Ok(p) => {
+                        p.write(&file)?;
+                        p
+                    }
+                    Err(e) => {
+                        ensure!(!cancel.load(Ordering::Relaxed), "Modyfikacja ASC anulowana");
+                        failed.push((layer.order, format!("{e:#}")));
+                        continue;
+                    }
+                }
+            }
+        };
+        for (i, z) in &patch.cells {
+            if let Some(c) = cells.get_mut(*i as usize) {
+                *c = *z;
+            }
+        }
+        reports.push((layer.order, patch.report));
+        applied.push((key, bounds));
+    }
+
+    // Nothing applied: the untouched base is the result.
+    if applied.is_empty() {
+        let mut terrain = Terrain::open(base)?;
+        terrain.meta = meta.clone();
+        return Ok(Composed { dir: base.to_owned(), terrain, reports, failed, skipped });
+    }
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    base_key.hash(&mut h);
+    for (key, _) in &applied {
+        key.hash(&mut h);
+    }
+    let dir = cache.join(format!("{COMPOSITE}{:016x}", h.finish()));
+    if !dir.join("terrain.json").is_file() {
+        let tmp = cache.join(format!("asc-tmp-{:016x}-{}", h.finish(), std::process::id()));
+        write_heights(&tmp, meta, &cells)?;
+        if std::fs::rename(&tmp, &dir).is_err() {
+            let _ = std::fs::remove_dir_all(&tmp);
+        }
+    }
+    // Earlier composites are rebuilt from their patches on demand; open ones stay locked.
+    if let Ok(entries) = std::fs::read_dir(cache) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path != dir && entry.file_name().to_string_lossy().starts_with(COMPOSITE) {
+                let _ = std::fs::remove_dir_all(path);
+            }
+        }
+    }
+    let mut terrain = Terrain::open(&dir)?;
+    terrain.meta = meta.clone();
+    Ok(Composed { dir, terrain, reports, failed, skipped })
 }
 
 /// Longitudinal profile along samples `z` spaced by `step` metres: stays within
@@ -930,6 +1124,68 @@ mod tests {
         let flat = Earthwork { max_fill: 0., ..e };
         assert!(apply_earthwork(&terrain, &parts, &strip("MLOD"), &root.join("none"), &cancel, 0., &flat).is_err());
         drop(terrain);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn layers_keep_the_source_cached_and_disappear_with_their_route() {
+        let root = std::env::temp_dir().join(format!("road-layers-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let base = root.join("source");
+        let source = ditch(&base);
+        let meta = source.meta.clone();
+        let cache = root.join("cache");
+        let cancel = AtomicBool::new(false);
+        let catalog = strip("ODOL");
+        let original = std::fs::read(base.join("height.f32")).unwrap();
+        let layer = |order, x: f64, fill| Layer {
+            order,
+            parts: vec![PlacedPart { model: "strip.p3d".into(), reverse: false, position: [x, 7.], rotation: 0. }],
+            blend_width: 0.,
+            earthwork: Earthwork { max_grade: 5., max_cut: 0., max_fill: fill, side_slope: 2. },
+        };
+        let patches = || std::fs::read_dir(&cache).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().starts_with("asc-patch-")).count();
+        let y = 63 - 32;
+
+        let one = compose(&base, &meta, &[layer(1, 32., 2.5)], &catalog, &cache, &cancel).unwrap();
+        assert_ne!(one.dir, base);
+        assert!(one.terrain.value(32, y).unwrap() > 99.5);
+        assert_eq!(one.reports.len(), 1);
+        assert!(one.reports[0].1.changed > 10);
+        assert_eq!(std::fs::read(base.join("height.f32")).unwrap(), original, "the source ASC is never written");
+        assert_eq!(patches(), 1);
+        let graded = one.terrain.value(32, y);
+        let dir = one.dir.clone();
+        drop(one);
+
+        // The same route again comes from the cache, with the same result and report.
+        let again = compose(&base, &meta, &[layer(1, 32., 2.5)], &catalog, &cache, &cancel).unwrap();
+        assert_eq!((again.dir.clone(), again.terrain.value(32, y)), (dir, graded));
+        assert!(again.reports[0].1.fill > 1.5);
+        assert_eq!(patches(), 1);
+        drop(again);
+
+        // A later overlapping route is built on the earlier one and wins where they meet.
+        let two = compose(&base, &meta, &[layer(2, 34., 2.5), layer(1, 32., 2.5)], &catalog, &cache, &cancel).unwrap();
+        assert_eq!(two.reports.iter().map(|r| r.0).collect::<Vec<_>>(), vec![1, 2]);
+        assert_eq!(patches(), 2);
+        drop(two);
+        // Without the earlier route the later one depends on nothing and is rebuilt.
+        let alone = compose(&base, &meta, &[layer(2, 34., 2.5)], &catalog, &cache, &cancel).unwrap();
+        assert_eq!(patches(), 3);
+        // Cells outside the remaining route are back at their source height.
+        assert_eq!(alone.terrain.value(20, y), source.value(20, y));
+        drop(alone);
+
+        // An impossible route is reported and leaves the source as the result.
+        let failed = compose(&base, &meta, &[layer(3, 32., 0.)], &catalog, &cache, &cancel).unwrap();
+        assert_eq!(failed.dir, base);
+        assert_eq!(failed.failed.len(), 1);
+        drop(failed);
+        // Models that are not loaded yet leave the layer out without failing it.
+        let waiting = compose(&base, &meta, &[layer(4, 30., 2.5)], &[], &cache, &cancel).unwrap();
+        assert_eq!((waiting.dir.clone(), waiting.skipped.clone(), waiting.failed.len()), (base.clone(), vec![4], 0));
+        drop((waiting, source));
         std::fs::remove_dir_all(root).unwrap();
     }
 }

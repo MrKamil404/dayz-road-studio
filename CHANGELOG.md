@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- **Grade ASC under the selected route** is now a temporary adaptation stored with the route. The source ASC is never written; deleting the route or using **Remove terrain adaptation** restores the terrain, and editing a route rebuilds its adaptation. **Export ASC…** writes the terrain with its adaptations to a new file.
+- Route generation takes part in terrain adaptation: **Adapt the terrain when generating routes** (on by default) adapts the terrain as soon as a route is routed, fitted or finished live. Routes are planned over the other routes' adaptations and without their own previous one.
+
 ## 2.5.2 — 2026-11-08
 
 ### Fixed
