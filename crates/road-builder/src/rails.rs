@@ -12,6 +12,102 @@ use std::{fmt::Write as _, path::Path};
 /// Default folder with the DayZ track models.
 pub const DEFAULT_FOLDER: &str = "P:\\dz\\structures\\rail\\Tracks";
 
+/// Top of the roadway on the DayZ track pieces, above their origin.
+const TRACK_ROADWAY: f64 = 0.669;
+const MEMORY_POINTS: [(&str, &str); 2] = [("lb", "le"), ("pb", "pe")];
+
+/// A bridge model that can be chained over a gap, measured from its P3D.
+#[derive(Clone, Debug)]
+pub struct BridgeKit {
+    pub model: String,
+    /// Where the driving surface starts and ends, in model coordinates (x, z).
+    pub start: Point,
+    pub end: Point,
+    /// Driving surface above the origin of the model, m.
+    pub deck: f64,
+    /// How far the supports reach below the driving surface, m.
+    pub pier: f64,
+    pub max_pieces: usize,
+}
+impl BridgeKit {
+    pub fn length(&self) -> f64 {
+        norm(sub(self.end, self.start))
+    }
+    /// `count` pieces in a straight line from `at` along `heading`, and where they end.
+    pub fn lay(&self, at: Point, heading: f64, count: usize) -> (Vec<PlacedPart>, Point) {
+        let axis = sub(self.end, self.start);
+        let angle = heading - axis[1].atan2(axis[0]);
+        let mut pieces = Vec::with_capacity(count);
+        let mut p = at;
+        for _ in 0..count {
+            let position = sub(p, rotate(self.start, angle));
+            pieces.push(PlacedPart { model: self.model.clone(), reverse: false, position, rotation: -angle.to_degrees() });
+            p = add(position, rotate(self.end, angle));
+        }
+        (pieces, p)
+    }
+    fn load(file: &Path, track: bool) -> Result<Self> {
+        let bytes = std::fs::read(file).with_context(|| format!("Nie można odczytać {}", file.display()))?;
+        let lods = odol::read(&bytes, |i, r| i == 0 || r == odol::MEMORY || r == ROADWAY)?;
+        let visual = lods.first().context("Model ODOL nie ma LOD")?;
+        let lowest = visual.vertices.iter().map(|v| v[1] as f64).fold(f64::INFINITY, f64::min);
+        let memory = lods.iter().find(|l| l.resolution == odol::MEMORY).context("Model mostu nie ma punktów pamięci")?;
+        let flat = |p: [f32; 3]| [p[0] as f64, p[2] as f64];
+        let (start, end, top) = if track {
+            let (a, b) = (memory.point("map1"), memory.point("map2"));
+            let (a, b) = (a.context("Most kolejowy bez punktu map1")?, b.context("Most kolejowy bez punktu map2")?);
+            let roadway = lods.iter().find(|l| l.resolution == ROADWAY).context("Most kolejowy bez powierzchni jezdnej")?;
+            (flat(a), flat(b), roadway.vertices.iter().map(|v| v[1] as f64).fold(f64::NEG_INFINITY, f64::max))
+        } else {
+            let mid = |k: usize, i: usize| -> Result<[f32; 3]> {
+                let name = if i == 0 { MEMORY_POINTS[k].0 } else { MEMORY_POINTS[k].1 };
+                memory.point(name).with_context(|| format!("Most bez punktu {name}"))
+            };
+            let (lb, pb, le, pe) = (mid(0, 0)?, mid(1, 0)?, mid(0, 1)?, mid(1, 1)?);
+            (mul(add(flat(lb), flat(pb)), 0.5), mul(add(flat(le), flat(pe)), 0.5), lb[1] as f64)
+        };
+        let name = file.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
+        Ok(Self {
+            model: file.to_string_lossy().into_owned(),
+            start,
+            end,
+            // A track stands on its origin with the roadway slightly above it.
+            deck: if track { top - TRACK_ROADWAY } else { top },
+            pier: top - lowest,
+            // The wooden bridge is one whole span.
+            max_pieces: if name.contains("wood") { 1 } else { usize::MAX },
+        })
+    }
+    /// The railway bridge from the `Bridges` folder next to the track models.
+    pub fn for_track(tracks: &Path, family: &str) -> Option<Self> {
+        if family.to_lowercase().contains("small") {
+            return None;
+        }
+        Self::load(&tracks.parent()?.join("Bridges").join("Rail_Bridge_15.p3d"), true).ok()
+    }
+    /// The road bridge of the right width from the `Bridges` folder next to the road parts.
+    pub fn for_road(parts: &Path, family: &str, catalog: &[CatalogPart]) -> Option<Self> {
+        let width = catalog
+            .iter()
+            .filter(|c| c.family == family && c.category == 3)
+            .flat_map(|c| c.model.triangles.iter().flatten().map(|p| p[0].abs() * 2.))
+            .fold(0., f64::max);
+        if width <= 0. {
+            return None;
+        }
+        let name = if width <= 5.5 {
+            "Bridge_Wood_25.p3d"
+        } else if width <= 9.5 {
+            "Bridge_Stone_25.p3d"
+        } else {
+            "Bridge_Metal_25.p3d"
+        };
+        Self::load(&parts.parent()?.join("Bridges").join(name), false).ok()
+    }
+}
+/// Resolution of the roadway LOD.
+const ROADWAY: f32 = 3e15;
+
 /// Marker error: an ODOL model without the `map1` / `map2` track end points.
 #[derive(Debug)]
 pub struct NotTrack;
@@ -306,7 +402,6 @@ struct Tilt {
     new_entry: [f64; 3],
     level: [[f64; 3]; 3],
     tilted: [[f64; 3]; 3],
-    exit: Point,
 }
 impl Tilt {
     fn turn(&self, v: [f64; 3]) -> [f64; 3] {
@@ -326,22 +421,65 @@ impl Tilt {
     }
 }
 
+/// Poses of a bridge's pieces on the straight line between its two banks.
+fn bridge_poses(bridge: &crate::document::Bridge, from_plan: Point, to_plan: Point, from: [f64; 3], to: [f64; 3]) -> Vec<Pose> {
+    let c = sub(to_plan, from_plan);
+    let length = norm(c).max(1e-9);
+    let d = mul(c, 1. / length);
+    let sin = ((to[2] - from[2]) / length).clamp(-0.5, 0.5);
+    let cos = (1. - sin * sin).sqrt();
+    let chord = [d[0] * cos, d[1] * cos, sin];
+    let side = [d[1], -d[0], 0.];
+    let up = cross3(side, chord);
+    let tilt = Tilt { entry: from_plan, new_entry: from, level: [side, [d[0], d[1], 0.], [0., 0., 1.]], tilted: [side, chord, up] };
+    bridge
+        .pieces
+        .iter()
+        .map(|piece| {
+            let mut pose = tilt.pose(piece);
+            pose.origin = std::array::from_fn(|k| pose.origin[k] - pose.up[k] * bridge.deck);
+            pose
+        })
+        .collect()
+}
+/// Plan position of a route part's two ends.
+fn part_ends(part: &PlacedPart, catalog: &[CatalogPart]) -> Result<(Point, Point)> {
+    let model = &catalog.iter().find(|c| c.path == part.model).context("Brak modelu parta w katalogu")?.model;
+    let (a, b) = (
+        model.ports[usize::from(part.reverse)].context("Brak portu modelu")?,
+        model.ports[1 - usize::from(part.reverse)].context("Brak portu modelu")?,
+    );
+    let angle = -part.rotation.to_radians();
+    Ok((add(rotate(a.p, angle), part.position), add(rotate(b.p, angle), part.position)))
+}
+/// Poses of everything rigid on a route, one entry per part, extra and bridge piece: `None`
+/// for road parts, which follow the terrain by themselves.
+pub fn route_poses(route: &Route, catalog: &[CatalogPart], ground: &dyn Fn(Point) -> Option<f64>) -> Result<Vec<Option<Pose>>> {
+    if route.rail {
+        return Ok(lay_on_terrain(&route.parts, &route.extras, &route.bridges, catalog, ground)?.into_iter().map(Some).collect());
+    }
+    let mut poses = vec![None; route.parts.len() + route.extras.len()];
+    for bridge in &route.bridges {
+        let (Some(before), Some(after)) = (bridge.after.checked_sub(1).and_then(|i| route.parts.get(i)), route.parts.get(bridge.after)) else {
+            bail!("Most bez drogi po obu stronach");
+        };
+        let (from, to) = (part_ends(before, catalog)?.1, part_ends(after, catalog)?.0);
+        let height = |p: Point| [p[0], p[1], ground(p).unwrap_or(0.)];
+        poses.extend(bridge_poses(bridge, from, to, height(from), height(to)).into_iter().map(Some));
+    }
+    Ok(poses)
+}
+
 /// Lays a chain of rigid track pieces on the terrain. Each piece runs from the end of the
 /// previous one to the terrain at its own far end, so the centre line stays connected in
 /// space; tilted pieces cover less ground, so the chain shifts slightly along its length.
 /// Side slope turns each piece about its own chord, which leaves its ends in place, and
 /// neighbours differ by little so the rails still meet. Returns poses of `parts` then `extras`.
-pub fn lay_on_terrain(parts: &[PlacedPart], extras: &[PlacedPart], catalog: &[CatalogPart], ground: &dyn Fn(Point) -> Option<f64>) -> Result<Vec<Pose>> {
+pub fn lay_on_terrain(parts: &[PlacedPart], extras: &[PlacedPart], bridges: &[crate::document::Bridge], catalog: &[CatalogPart], ground: &dyn Fn(Point) -> Option<f64>) -> Result<Vec<Pose>> {
     // Chords of the pieces as they lie on the plan.
     let mut chords = Vec::with_capacity(parts.len());
     for part in parts {
-        let model = &catalog.iter().find(|c| c.path == part.model).context("Brak modelu parta w katalogu")?.model;
-        let (a, b) = (
-            model.ports[usize::from(part.reverse)].context("Brak portu modelu")?,
-            model.ports[1 - usize::from(part.reverse)].context("Brak portu modelu")?,
-        );
-        let angle = -part.rotation.to_radians();
-        chords.push((add(rotate(a.p, angle), part.position), add(rotate(b.p, angle), part.position)));
+        chords.push(part_ends(part, catalog)?);
     }
     // Side slope along the track, kept close between neighbours.
     let mut roll: Vec<f64> = chords
@@ -363,7 +501,14 @@ pub fn lay_on_terrain(parts: &[PlacedPart], extras: &[PlacedPart], catalog: &[Ca
         roll[i] = roll[i].clamp(roll[i + 1] - MAX_ROLL_STEP, roll[i + 1] + MAX_ROLL_STEP);
     }
 
-    let mut tilts: Vec<Tilt> = Vec::with_capacity(parts.len());
+    struct Laid {
+        entry: Point,
+        exit: Point,
+        new_entry: [f64; 3],
+        new_exit: [f64; 3],
+        tilt: Tilt,
+    }
+    let mut tilts: Vec<Laid> = Vec::with_capacity(parts.len());
     let mut poses = Vec::with_capacity(parts.len() + extras.len());
     let mut shift = [0., 0.];
     let mut previous: Option<(Point, [f64; 3])> = None;
@@ -395,26 +540,32 @@ pub fn lay_on_terrain(parts: &[PlacedPart], extras: &[PlacedPart], catalog: &[Ca
         let new_exit = [start[0] + chord[0] * length, start[1] + chord[1] * length, z + sin * length];
         let tilt = Tilt {
             entry,
-            exit,
             new_entry,
             level: [flat_side, [d[0], d[1], 0.], [0., 0., 1.]],
             tilted: [side, chord, up],
         };
         poses.push(tilt.pose(part));
-        tilts.push(tilt);
+        tilts.push(Laid { exit, new_exit, entry, new_entry, tilt });
         shift = [new_exit[0] - exit[0], new_exit[1] - exit[1]];
         previous = Some((exit, new_exit));
     }
     // Crossing decks and other objects ride on the piece under them.
     for extra in extras {
         let nearest = tilts.iter().min_by(|a, b| {
-            let distance = |t: &Tilt| norm(sub(extra.position, mul(add(t.entry, t.exit), 0.5)));
+            let distance = |t: &Laid| norm(sub(extra.position, mul(add(t.entry, t.exit), 0.5)));
             distance(a).total_cmp(&distance(b))
         });
         match nearest {
-            Some(t) => poses.push(t.pose(extra)),
+            Some(t) => poses.push(t.tilt.pose(extra)),
             None => bail!("Brak torowiska pod obiektem przejazdu"),
         }
+    }
+    // Each bridge runs in a straight line from the end of one stretch to the start of the next.
+    for bridge in bridges {
+        let (Some(before), Some(after)) = (bridge.after.checked_sub(1).and_then(|i| tilts.get(i)), tilts.get(bridge.after)) else {
+            bail!("Most bez torowiska po obu stronach");
+        };
+        poses.extend(bridge_poses(bridge, before.exit, after.entry, before.new_exit, after.new_entry));
     }
     Ok(poses)
 }
@@ -438,10 +589,15 @@ pub fn objects(routes: &[&Route], catalog: &[CatalogPart], ground: Option<&dyn F
     for route in routes {
         ensure!(!route.parts.is_empty(), "Torowisko {} nie ma dopasowanych segmentów", route.name);
         let poses = match ground {
-            Some(g) => Some(lay_on_terrain(&route.parts, &route.extras, catalog, g)?),
+            Some(g) => Some(route_poses(route, catalog, g)?),
             None => None,
         };
-        for (i, part) in route.parts.iter().chain(&route.extras).enumerate() {
+        let spans = route.bridges.iter().flat_map(|b| &b.pieces);
+        for (i, part) in route.parts.iter().chain(&route.extras).chain(spans).enumerate() {
+            // Roads themselves go to the TV4P; only their bridges are objects.
+            if !route.rail && i < route.parts.len() + route.extras.len() {
+                continue;
+            }
             let name = part
                 .model
                 .rsplit(['\\', '/'])
@@ -449,7 +605,7 @@ pub fn objects(routes: &[&Route], catalog: &[CatalogPart], ground: Option<&dyn F
                 .and_then(|f| f.rsplit_once('.').map(|(s, _)| s).or(Some(f)))
                 .context("Brak nazwy modelu toru")?
                 .to_lowercase();
-            let (x, y, yaw, pitch, roll, z) = match poses.as_ref().map(|p| p[i]) {
+            let (x, y, yaw, pitch, roll, z) = match poses.as_ref().and_then(|p| p[i]) {
                 Some(pose) => {
                     let (yaw, pitch, roll) = pose.angles();
                     let terrain = ground.and_then(|g| g([pose.origin[0], pose.origin[1]])).unwrap_or(pose.origin[2]);
@@ -532,6 +688,7 @@ pub struct Crossings {
     /// Road segments by 50 m cell.
     cells: std::collections::HashMap<(i64, i64), Vec<(usize, usize)>>,
     kit: Kit,
+    bridge: Option<BridgeKit>,
 }
 const CELL: f64 = 50.;
 fn cell(p: Point) -> (i64, i64) {
@@ -558,7 +715,15 @@ fn point_segment(p: Point, a: Point, b: Point) -> f64 {
 impl Crossings {
     /// No roads: tracks are never limited by crossings.
     pub fn none() -> Self {
-        Self { roads: vec![], cells: Default::default(), kit: Kit::None }
+        Self { roads: vec![], cells: Default::default(), kit: Kit::None, bridge: None }
+    }
+    /// Bridges the routing may build.
+    pub fn with_bridge(mut self, kit: Option<BridgeKit>) -> Self {
+        self.bridge = kit;
+        self
+    }
+    pub fn bridge(&self) -> Option<&BridgeKit> {
+        self.bridge.as_ref()
     }
     /// `tracks` is the folder with the family's models; deck blocks are looked up there and
     /// in the neighbouring `Misc` folder.
@@ -582,7 +747,7 @@ impl Crossings {
                 }
             }
         }
-        Self { roads, cells, kit }
+        Self { roads, cells, kit, bridge: None }
     }
     fn kit(family: &str, catalog: &[CatalogPart], tracks: &Path) -> Kit {
         let lower = family.to_lowercase();
@@ -786,7 +951,7 @@ mod tests {
             ],
             replaces: None,
             rail: true, extras: vec![],
-            grading: None,
+            grading: None, bridges: vec![],
         };
         let text = objects(&[&route], &[], None, ExportSigns::default()).unwrap();
         // The stored rotation already places the model; a reversed piece is only entered
@@ -852,7 +1017,7 @@ mod tests {
         let parts = chain(&catalog, &names);
         // A slope rising to the north and east, with a bend in it.
         let ground = |p: Point| Some(50. + 0.06 * (p[1] - 100.) + 0.03 * (p[0] - 100.) + 0.002 * (p[1] - 100.).abs());
-        let poses = lay_on_terrain(&parts, &[], &catalog, &ground).unwrap();
+        let poses = lay_on_terrain(&parts, &[], &[], &catalog, &ground).unwrap();
         let ends = joints(&parts, &poses, &catalog);
         for w in ends.windows(2) {
             let gap = (0..3).map(|k| (w[0].1[k] - w[1].0[k]).powi(2)).sum::<f64>().sqrt();
@@ -882,14 +1047,14 @@ mod tests {
         let catalog = test_catalog();
         let parts = chain(&catalog, &[("s", false)]);
         // Rising along the track, flat across it.
-        let pose = lay_on_terrain(&parts, &[], &catalog, &|p: Point| Some(p[1] * 0.05)).unwrap()[0];
+        let pose = lay_on_terrain(&parts, &[], &[], &catalog, &|p: Point| Some(p[1] * 0.05)).unwrap()[0];
         let (yaw, pitch, roll) = pose.angles();
         assert!(yaw.min(360. - yaw) < 1e-6 && (pitch - 0.05f64.atan().to_degrees()).abs() < 0.01 && roll.abs() < 1e-6, "{yaw} {pitch} {roll}");
         // Rising to the east: the right side is higher, which is a negative roll.
-        let pose = lay_on_terrain(&parts, &[], &catalog, &|p: Point| Some(p[0] * 0.05)).unwrap()[0];
+        let pose = lay_on_terrain(&parts, &[], &[], &catalog, &|p: Point| Some(p[0] * 0.05)).unwrap()[0];
         let (_, pitch, roll) = pose.angles();
         assert!(pitch.abs() < 1e-6 && (roll + 0.05f64.atan().to_degrees()).abs() < 0.01, "{pitch} {roll}");
-        let route = Route { name: "r".into(), family: "Rail_Track".into(), points: vec![], parts, replaces: None, rail: true, extras: vec![], grading: None };
+        let route = Route { name: "r".into(), family: "Rail_Track".into(), points: vec![], parts, replaces: None, rail: true, extras: vec![], grading: None, bridges: vec![] };
         let east = |p: Point| Some(p[0] * 0.05 + 10.);
         let g: &dyn Fn(Point) -> Option<f64> = &east;
         let plain = objects(&[&route], &catalog, Some(g), ExportSigns::default()).unwrap();
@@ -897,6 +1062,71 @@ mod tests {
         let field = |t: &str, i: usize| t.trim().split(';').nth(i).unwrap().parse::<f64>().unwrap();
         assert!(field(&plain, 5) < -2.8 && field(&flipped, 5) > 2.8);
         assert!(field(&plain, 7).abs() < 0.01, "origin stays on the ground: {plain}");
+    }
+
+    #[test]
+    fn bridges_join_their_banks_and_export_as_objects_only() {
+        let catalog = test_catalog();
+        let kit = BridgeKit { model: "G:\\dz\\Bridge_Stone_25.p3d".into(), start: [0., -12.5], end: [0., 12.5], deck: 8., pier: 20., max_pieces: usize::MAX };
+        let first = chain(&catalog, &[("s", false)]);
+        let at = crate::roads::endpoint(&first, &catalog).unwrap();
+        let (pieces, end) = kit.lay(at.p, at.outward[1].atan2(at.outward[0]), 2);
+        assert!(norm(sub(end, add(at.p, mul(at.outward, 50.)))) < 1e-9, "{end:?}");
+        let item = catalog.iter().find(|c| c.path == "s").unwrap();
+        let second = crate::roads::place(item, Port { p: end, outward: at.outward }, false).unwrap();
+        let mut route = Route {
+            name: "r".into(), family: "asf2".into(), points: vec![],
+            parts: vec![first[0].clone(), second], replaces: None, rail: false, extras: vec![], grading: None,
+            bridges: vec![crate::document::Bridge { deck: 8., after: 1, pieces }],
+        };
+        assert_eq!(route.stretches().iter().map(|p| p.len()).collect::<Vec<_>>(), vec![1, 1]);
+        // The banks differ in height: the deck runs straight between them.
+        let ground = |p: Point| Some(if p[1] < 150. { 10. } else { 12. });
+        let g: &dyn Fn(Point) -> Option<f64> = &ground;
+        let poses = route_poses(&route, &catalog, g).unwrap();
+        assert_eq!(poses.len(), 4);
+        assert!(poses[0].is_none() && poses[1].is_none());
+        let deck = poses[2].unwrap().apply([0., 8., -12.5]);
+        assert!((deck[2] - 10.).abs() < 1e-6 && (deck[1] - 125.).abs() < 0.01, "{deck:?}");
+        let far = poses[3].unwrap().apply([0., 8., 12.5]);
+        assert!((far[2] - 12.).abs() < 1e-6, "{far:?}");
+        let joint = poses[2].unwrap().apply([0., 8., 12.5]);
+        let next = poses[3].unwrap().apply([0., 8., -12.5]);
+        assert!((0..3).all(|k| (joint[k] - next[k]).abs() < 1e-6));
+        // A road goes to the TV4P; only its bridge is written as objects.
+        let text = objects(&[&route], &catalog, Some(g), ExportSigns::default()).unwrap();
+        assert_eq!(text.lines().count(), 2);
+        assert!(text.lines().all(|l| l.starts_with("\"bridge_stone_25\";")), "{text}");
+        // A track keeps its pieces and gets the bridge between them.
+        route.rail = true;
+        let poses = route_poses(&route, &catalog, g).unwrap();
+        assert!(poses.iter().all(|p| p.is_some()));
+        assert_eq!(objects(&[&route], &catalog, Some(g), ExportSigns::default()).unwrap().lines().count(), 4);
+    }
+
+    /// The DayZ bridge models when the work drive holds them.
+    #[test]
+    fn dayz_bridges_measure_as_expected() {
+        let (roads, tracks) = (Path::new("P:/dz/structures/roads/parts"), Path::new(DEFAULT_FOLDER));
+        if !roads.join("../Bridges/Bridge_Stone_25.p3d").exists() {
+            return;
+        }
+        let strip = |width: f64| {
+            vec![CatalogPart {
+                path: "s".into(), family: "f".into(), category: 3, index: 0, road_type_index: 0,
+                model: Model { file: None, triangles: vec![[[-width / 2., 0.], [width / 2., 0.], [0., 5.]]], ports: [None; 4], line: vec![], length: 5., source: "MLOD".into() },
+            }]
+        };
+        let stone = BridgeKit::for_road(roads, "f", &strip(9.)).unwrap();
+        assert!(stone.model.contains("Stone") && (stone.length() - 25.).abs() < 0.01 && (stone.deck - 7.95).abs() < 0.01, "{stone:?}");
+        assert!((stone.pier - 16.85).abs() < 0.02);
+        let metal = BridgeKit::for_road(roads, "f", &strip(12.)).unwrap();
+        assert!(metal.model.contains("Metal") && (metal.deck - 8.05).abs() < 0.01);
+        let wood = BridgeKit::for_road(roads, "f", &strip(5.)).unwrap();
+        assert!(wood.model.contains("Wood") && wood.max_pieces == 1 && wood.length() > 30.);
+        let rail = BridgeKit::for_track(tracks, "Rail_TrackE").unwrap();
+        assert!((rail.length() - 14.45).abs() < 0.02 && (rail.deck - 5.88).abs() < 0.02 && (rail.pier - 14.11).abs() < 0.05, "{rail:?}");
+        assert!(BridgeKit::for_track(tracks, "Rail_TrackSmall").is_none());
     }
 
     /// Measured geometry of the DayZ track models when the P: drive is mounted.
@@ -988,7 +1218,7 @@ mod tests {
             }
             assert!(line.windows(2).all(|w| permitted(w[0], w[1], &terrain, &s, &none)));
             assert!(parts.iter().all(|p| catalog.iter().any(|c| c.path == p.model && c.family == family)));
-            let route = Route { name: "t".into(), family: family.to_owned(), points: points.to_vec(), parts: parts.clone(), replaces: None, rail: true, extras: vec![] , grading: None, };
+            let route = Route { name: "t".into(), family: family.to_owned(), points: points.to_vec(), parts: parts.clone(), replaces: None, rail: true, extras: vec![] , grading: None, bridges: vec![], };
             assert_eq!(objects(&[&route], &[], None, ExportSigns::default()).unwrap().lines().count(), parts.len());
         }
         drop(terrain);

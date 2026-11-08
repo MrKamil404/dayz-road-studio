@@ -1,4 +1,4 @@
-# DayZ Road Studio 2.5.2
+# DayZ Road Studio 2.5.3
 
 A Windows application for merging and designing roads in Terrain Builder `.tv4p` projects. DayZ Road Studio combines **Merge** and **Road Builder** with geometry previews, terrain tools and PNG export. Written in Rust.
 
@@ -26,7 +26,7 @@ Special thanks to **WoozyMasta** for [tv4p-road-tool](https://github.com/WoozyMa
 
 ## Version
 
-Current application version: **2.5.2** (`2.5.2` in Cargo). The application is named **DayZ Road Studio**. The executable remains `tv4p_merge_roads.exe` for compatibility with existing workflows. The version is shown in the window title and can be printed with `tv4p_merge_roads.exe --version`.
+Current application version: **2.5.3** (`2.5.3` in Cargo). The application is named **DayZ Road Studio**. The executable remains `tv4p_merge_roads.exe` for compatibility with existing workflows. The version is shown in the window title and can be printed with `tv4p_merge_roads.exe --version`.
 
 ## Changes in 2.5
 
@@ -234,7 +234,7 @@ In Road Builder, select a drawn route and choose **Route across terrain** after 
 
 ### Water and forbidden areas
 
-Road Builder's **Forbidden** tool draws forbidden areas and includes a **Water** section. **Avoid terrain below the water level** treats every ASC cell lower than **Water level m** (0 m by default) as forbidden, which covers the sea without drawing it. **Import water SHP…** reads Polygon, PolygonZ or PolygonM rings as forbidden areas (lakes, sea) and PolyLine, PolyLineZ or PolyLineM parts as rivers with the **River width m** chosen in the import window; coordinates are offset as in the road SHP import and the import is undone as one step. **Route across terrain**, live drawing, **Fit models to points** and the TV4P export check all avoid these areas, and terrain routing keeps at least the route tolerance away from them. **Show forbidden areas** (also **Forbidden areas** in the layer list) shows water below the level in blue, rivers as blue bands at their width and forbidden areas as red outlines. **Remove all forbidden areas** clears drawn and imported areas. Because water is forbidden, a road crossing it cannot be exported; place bridges where the water is not imported or with water detection turned off.
+Road Builder's **Forbidden** tool draws forbidden areas and includes a **Water** section. **Avoid terrain below the water level** treats every ASC cell lower than **Water level m** (0 m by default) as forbidden, which covers the sea without drawing it. **Import water SHP…** reads Polygon, PolygonZ or PolygonM rings as forbidden areas (lakes, sea) and PolyLine, PolyLineZ or PolyLineM parts as rivers with the **River width m** chosen in the import window; coordinates are offset as in the road SHP import and the import is undone as one step. **Route across terrain**, live drawing, **Fit models to points** and the TV4P export check all avoid these areas, and terrain routing keeps at least the route tolerance away from them. **Show forbidden areas** (also **Forbidden areas** in the layer list) shows water below the level in blue, rivers as blue bands at their width and forbidden areas as red outlines. **Remove all forbidden areas** clears drawn and imported areas. Bridges stop at these areas too, unless **Bridges may cross forbidden areas** is ticked.
 
 ### Cuts, embankments and grading
 
@@ -268,3 +268,9 @@ The 3D view needs OpenGL 3.0 or newer. Textures are loaded up to 256 px and RVMA
 ### Updates
 
 At start the program asks GitHub for the latest release. When it is newer than the running version, a **New version X.Y.Z** button appears in the top bar and the release notes open. **Download and install** downloads the release executable, checks its size and replaces the running file; the previous file is kept as `tv4p_merge_roads.exe.old` until the next start. **Restart** closes the program through the usual unsaved-changes prompt and starts the new version. **Check for updates** in the top bar checks again; set the environment variable `DAYZ_NO_UPDATE_CHECK=1` to skip the check at start. Updating works from 2.5.0 onwards; earlier versions have to be downloaded once by hand.
+
+### Bridges and viaducts
+
+**Route across terrain** builds a bridge where the road would need more fill than **Max. fill m** allows: up to that height the ground is raised with an embankment, and above it, up to **Max. bridge height m** (20 m by default), a bridge takes over. **Max. bridge length m** (150 m by default) limits its length; either limit at 0 turns bridges off, and older projects start at 0. **Bridge penalty** sets how many metres of road a metre of bridge costs, so a short detour still wins. A bridge is straight, keeps the maximum slope, never cuts into higher ground and is only built where its supports reach the ground. Bridges do not cross forbidden areas, rivers or water unless **Bridges may cross forbidden areas** is ticked for that kind of route.
+
+The models come from the `Bridges` folder next to the road parts or track pieces: `Bridge_Wood_25` (one span of about 32 m) for roads up to 5.5 m wide, `Bridge_Stone_25` up to 9.5 m, `Bridge_Metal_25` for wider roads, and `Rail_Bridge_15` for tracks (not `Rail_TrackSmall`). Bridges are drawn in 2D and 3D. A road is split at each bridge: **Export TV4P** writes each stretch as a separate road, and **Export tracks TB…** writes the bridges as objects, so export both. Terrain adaptation works on each stretch and leaves the ground under a bridge unchanged.

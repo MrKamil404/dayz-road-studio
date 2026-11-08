@@ -502,7 +502,7 @@ impl Library {
                         Ok(model) => model,
                         // Other railway objects (crossing decks) only need a footprint.
                         Err(t) if t.is::<crate::rails::NotTrack>() => {
-                            if !key.starts_with("rail_") {
+                            if !key.starts_with("rail_") && !key.starts_with("bridge_") {
                                 return Err(e);
                             }
                             crate::rails::object_model(&bytes)?

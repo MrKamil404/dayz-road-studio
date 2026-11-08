@@ -797,7 +797,9 @@ pub fn export_editor(
         if route.parts.is_empty() {
             bail!("Droga {} nie ma dopasowanych segmentów", route.name);
         }
-        let key = &route.parts[0];
+        // A road is cut by its bridges: every stretch is a separate road record.
+        for stretch in route.stretches() {
+        let key = &stretch[0];
         if key.reverse {
             bail!("Odwrócony segment kluczowy nie jest obsługiwany");
         }
@@ -805,8 +807,8 @@ pub fn export_editor(
             .iter()
             .find(|m| m.path == key.model)
             .context("Model poza definicjami TV4P")?;
-        for (i, part) in route.parts.iter().enumerate().skip(1) {
-            let at = crate::roads::endpoint(&route.parts[..i], catalog)?;
+        for (i, part) in stretch.iter().enumerate().skip(1) {
+            let at = crate::roads::endpoint(&stretch[..i], catalog)?;
             let m = catalog
                 .iter()
                 .find(|m| m.path == part.model)
@@ -846,7 +848,7 @@ pub fn export_editor(
             ),
         );
         let mut children = Vec::new();
-        for part in &route.parts[1..] {
+        for part in &stretch[1..] {
             let m = catalog
                 .iter()
                 .find(|m| m.path == part.model && m.road_type_index == item.road_type_index)
@@ -891,6 +893,7 @@ pub fn export_editor(
         let id = new_id(&mut used, &mut state, 1)?;
         new_ids.insert(id);
         bodies.push(reid(&body, id, &mut used, &mut state)?);
+            }
     }
     let list = build_list(0x8a, &bodies)?;
     let delta = list.len() as i64 - (roads.end - roads.start) as i64;
@@ -1074,7 +1077,7 @@ mod editor_tests {
             points,
             parts: parts.clone(),
             replaces: None, rail: false, extras: vec![],
-            grading: None,
+            grading: None, bridges: vec![],
         });
         export_editor(&base, &out, &doc, &c).unwrap();
         let b = fs::read(&out).unwrap();
@@ -1104,6 +1107,47 @@ mod editor_tests {
         fs::remove_dir_all(dir).unwrap();
     }
     #[test]
+    fn a_bridge_splits_its_road_into_separate_records() {
+        let dir = std::env::temp_dir().join(format!("road-tv4p-bridge-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let (base, out) = (dir.join("base.tv4p"), dir.join("out.tv4p"));
+        fs::write(&base, fixture()).unwrap();
+        let before = block(&fixture(), 0x8a).unwrap().entries.len();
+        let c = catalog();
+        let settings = crate::document::RoutingSettings::default();
+        let fit = |a: f64, b: f64| crate::roads::fit(&[[200000., a], [200000., b]], "asf2", &c, &settings, |_, _| true).unwrap();
+        let (first, second) = (fit(200., 312.5), fit(362.5, 475.));
+        let after = first.len();
+        let mut parts = first.clone();
+        parts.extend(second.clone());
+        let mut doc = Document::default();
+        doc.routes.push(Route {
+            name: "bridged".into(),
+            family: "asf2".into(),
+            points: vec![],
+            parts,
+            replaces: None,
+            rail: false,
+            extras: vec![],
+            grading: None,
+            bridges: vec![crate::document::Bridge { deck: 8., after, pieces: vec![] }],
+        });
+        export_editor(&base, &out, &doc, &c).unwrap();
+        let b = fs::read(&out).unwrap();
+        let entries = block(&b, 0x8a).unwrap().entries;
+        assert_eq!(entries.len(), before + 2, "one record per stretch");
+        // The disconnected parts would be rejected as one road.
+        doc.routes[0].bridges.clear();
+        assert!(export_editor(&base, &dir.join("bad.tv4p"), &doc, &c).is_err());
+        let mut lib = Library::new(dir.clone());
+        let decoded = load(&out, &mut lib).unwrap();
+        let n = decoded.roads.len();
+        assert_eq!(decoded.roads[n - 2].shape.lines, crate::roads::shape(&first, &mut lib).unwrap().lines);
+        assert_eq!(decoded.roads[n - 1].shape.lines, crate::roads::shape(&second, &mut lib).unwrap().lines);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn editor_export_roundtrip_and_real_geometry() {
         let dir = std::env::temp_dir().join(format!("road-tv4p-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
@@ -1130,7 +1174,7 @@ mod editor_tests {
             points: vec![],
             parts: parts.clone(),
             replaces: None, rail: false, extras: vec![],
-            grading: None,
+            grading: None, bridges: vec![],
         });
         export_editor(&base, &out, &doc, &c).unwrap();
         let mut lib = Library::new(dir.clone());
@@ -1240,7 +1284,7 @@ mod editor_tests {
                     rotation: 0.,
                 }],
                 replaces: None, rail: false, extras: vec![],
-                grading: None,
+                grading: None, bridges: vec![],
             });
             export_editor(&base, &out, &doc, &c).unwrap();
             let output = std::fs::read(&out).unwrap();
@@ -1314,7 +1358,7 @@ mod editor_tests {
         doc.routes.push(Route {
             name: "replacement".into(), family: "asf2".into(),
             points: vec![], parts: vec![], replaces: Some(999), rail: false, extras: vec![],
-            grading: None,
+            grading: None, bridges: vec![],
         });
         assert!(export_editor(&base, &out, &doc, &[]).is_err());
         assert_eq!(fs::read(&out).unwrap(), deleted);
@@ -1342,7 +1386,7 @@ mod editor_tests {
             }],
             replaces: None,
             rail: true, extras: vec![],
-            grading: None,
+            grading: None, bridges: vec![],
         });
         // Track models are not Road Tool parts; the TV4P stays as it was.
         export_editor(&base, &out, &doc, &[]).unwrap();

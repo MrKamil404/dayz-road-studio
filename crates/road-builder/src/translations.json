@@ -2286,5 +2286,65 @@
   {
     "pl": "Nieprawidłowa długość toru",
     "en": "Invalid track length"
+  },
+  {
+    "pl": "Trasa wyznaczona i złożona z modeli, mosty: {0}",
+    "en": "Route found and built from models, bridges: {0}"
+  },
+  {
+    "pl": "Model mostu nie ma punktów pamięci",
+    "en": "The bridge model has no memory points"
+  },
+  {
+    "pl": "Most kolejowy bez punktu map1",
+    "en": "Railway bridge without the map1 point"
+  },
+  {
+    "pl": "Most kolejowy bez punktu map2",
+    "en": "Railway bridge without the map2 point"
+  },
+  {
+    "pl": "Most kolejowy bez powierzchni jezdnej",
+    "en": "Railway bridge without a roadway"
+  },
+  {
+    "pl": "Most bez punktu {0}",
+    "en": "Bridge without the {0} point"
+  },
+  {
+    "pl": "Most bez drogi po obu stronach",
+    "en": "Bridge without a road on both sides"
+  },
+  {
+    "pl": "Most bez torowiska po obu stronach",
+    "en": "Bridge without a track on both sides"
+  },
+  {
+    "pl": "Brak modelu mostu",
+    "en": "No bridge model"
+  },
+  {
+    "pl": "Most poza trasą",
+    "en": "Bridge outside the route"
+  },
+  {
+    "pl": "Kara za most",
+    "en": "Bridge penalty"
+  },
+  {
+    "pl": "Most maks. wysokość m",
+    "en": "Max. bridge height m"
+  },
+  {
+    "pl": "Most maks. długość m",
+    "en": "Max. bridge length m"
+  },
+  {
+    "pl": "Mosty mogą przecinać zakazy",
+    "en": "Bridges may cross forbidden areas"
+  },
+  {
+    "pl": "Pozwala mostom przechodzić nad obszarami zakazanymi, rzekami i wodą",
+    "en": "Lets bridges pass over forbidden areas, rivers and water"
   }
 ]

@@ -1,21 +1,20 @@
 # Changelog
 
-## Unreleased
+## 2.5.3 — 2026-11-08
 
 ### Changed
+- **Grade ASC under the selected route** is now a temporary adaptation stored with the route. The source ASC is never written; deleting the route or using **Remove terrain adaptation** restores the terrain, and editing a route rebuilds its adaptation. **Export ASC…** writes the terrain with its adaptations to a new file.
+- Route generation takes part in terrain adaptation: **Adapt the terrain when generating routes** (on by default) adapts the terrain as soon as a route is routed, fitted or finished live. Routes are planned over the other routes' adaptations and without their own previous one.
 - **Edit points** works in steps: choose a route, then a point, which is clearly marked and is the only thing that can be dragged. Points are added with a **+** between two neighbours, removed with **Delete** or **Remove point**, and routes are extended from either end by clicking the map.
 - The **Select** tool moves a route or road only when the drag starts on it.
 - Exported track pieces are tilted onto the terrain with pitch, roll and height, and stay connected in space. The 3D view shows the same placement. **Invert pitch sign** and **Invert roll sign** adjust the exported signs.
 - Exported track lines end with the underground flag, set to 0.
 
+### Added
+- Automatic bridges and viaducts: **Route across terrain** uses the DayZ bridge models where the road needs more fill than **Max. fill m**, up to **Max. bridge height m** and **Max. bridge length m**, weighed by **Bridge penalty**. Forbidden areas, rivers and water are crossed only with **Bridges may cross forbidden areas**. Road stretches between bridges are exported as separate TV4P roads and the bridges as Terrain Builder objects.
+
 ### Fixed
 - Reversed curved track pieces are no longer exported turned by 180°.
-
-## Unreleased
-
-### Changed
-- **Grade ASC under the selected route** is now a temporary adaptation stored with the route. The source ASC is never written; deleting the route or using **Remove terrain adaptation** restores the terrain, and editing a route rebuilds its adaptation. **Export ASC…** writes the terrain with its adaptations to a new file.
-- Route generation takes part in terrain adaptation: **Adapt the terrain when generating routes** (on by default) adapts the terrain as soon as a route is routed, fitted or finished live. Routes are planned over the other routes' adaptations and without their own previous one.
 
 ## 2.5.2 — 2026-11-08
 

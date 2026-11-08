@@ -1,9 +1,9 @@
 use crate::{
     document::{ForbiddenLine, RoutingSettings, WaterSettings},
-    geometry::{Point, mul, norm, sub},
+    geometry::{Point, add, mul, norm, sub},
     terrain::Terrain,
 };
-use anyhow::{Result, bail, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use std::{
     cmp::Ordering,
     f64::consts::{FRAC_PI_2, FRAC_PI_4, TAU},
@@ -455,6 +455,73 @@ impl PartialOrd for Node {
     }
 }
 /// Search state: a pose on the road; `stage` is 1 once the leg's target is reached.
+/// A step over a gap: the state after `count` bridge pieces.
+struct Span {
+    count: usize,
+    end: Point,
+    deck: f64,
+    length: f64,
+}
+/// A straight bridge from `from` along `heading` to the first place the road can go on: the
+/// deck keeps the maximum grade, stays above the ground and within `bridge_height` and the
+/// reach of its supports. A bridge takes over where the ground lies deeper under the road than
+/// an embankment of `max_fill` can make up. Forbidden areas, rivers and water stop it unless
+/// `bridge_over_forbidden` is set, and then crossing one is reason enough for a bridge.
+#[allow(clippy::too_many_arguments)]
+fn bridge_span(
+    from: Point,
+    heading: f64,
+    band: Option<(f64, f64)>,
+    kit: &crate::rails::BridgeKit,
+    terrain: &Terrain,
+    s: &RoutingSettings,
+    forbidden: &Obstacles,
+    clearance: f64,
+    ahead: f64,
+) -> Option<Span> {
+    let dir = [heading.cos(), heading.sin()];
+    let module = kit.length();
+    if module < 1. || s.bridge_max < module || s.bridge_height <= 0. {
+        return None;
+    }
+    let ground = terrain.sample(from)?;
+    let deck = band.map_or(ground, |(lo, hi)| ground.clamp(lo, hi.max(lo)));
+    let grade = s.max_grade / 100.;
+    let most = ((s.bridge_max / module).floor() as usize).min(kit.max_pieces);
+    let spacing = (terrain.meta.cell / 2.).clamp(0.5, 5.);
+    for count in 1..=most {
+        let length = count as f64 * module;
+        let end = add(from, mul(dir, length));
+        let Some(landing) = terrain.sample(end) else { break };
+        if (landing - deck).abs() > grade * length {
+            continue;
+        }
+        let onward = add(end, mul(dir, ahead));
+        if profile_band(&[end, onward], terrain, s, forbidden, clearance, Some((landing, landing))).is_none() {
+            continue;
+        }
+        let crosses = forbidden.segment_blocked(from, end, clearance);
+        if crosses && !s.bridge_over_forbidden {
+            return None;
+        }
+        let reach = kit.pier.min(s.bridge_height);
+        let steps = (length / spacing).ceil() as usize;
+        let mut deepest = 0f64;
+        let clear = (1..steps).all(|i| {
+            let f = i as f64 / steps as f64;
+            let surface = deck + (landing - deck) * f;
+            terrain.sample(add(from, mul(dir, length * f))).is_some_and(|z| {
+                deepest = deepest.max(surface - z);
+                z <= surface + 0.5 && surface - z <= reach
+            })
+        });
+        if !clear || (deepest <= s.max_fill && !crosses) {
+            continue;
+        }
+        return Some(Span { count, end, deck: landing, length });
+    }
+    None
+}
 #[derive(Clone, Copy)]
 struct State {
     p: Point,
@@ -469,6 +536,8 @@ struct State {
     origin: usize,
     /// Reachable road heights here (embankments and cuts); `None` at a free start.
     band: Option<(f64, f64)>,
+    /// Bridge pieces of the step from the parent; 0 for road.
+    bridge: usize,
 }
 /// Sample a circular arc (a straight line when `delta` is zero) starting at `p`.
 fn arc(p: Point, heading: f64, delta: f64, length: f64) -> Vec<Point> {
@@ -656,6 +725,7 @@ fn pieces<'a>(
     }
     out
 }
+const BRIDGE: usize = 1 << 40;
 fn pose(p: Point, heading: f64, local: Point) -> Point {
     let (c, s) = (heading.cos(), heading.sin());
     [p[0] + local[0] * c - local[1] * s, p[1] + local[0] * s + local[1] * c]
@@ -666,6 +736,7 @@ struct TrackState {
     heading: f64,
     g: f64,
     parent: usize,
+    /// Index of the piece from the parent, or `BRIDGE + count` for a bridge.
     piece: usize,
     origin: usize,
     band: Option<(f64, f64)>,
@@ -722,7 +793,14 @@ pub fn plan_track(
             "Punkt trasy leży w obszarze zakazanym lub bliżej niego niż tolerancja trasy"
         );
     }
-    let field = CostField::new(terrain, waypoints, s, forbidden, s.tolerance, cancel)?;
+    let field = if crossings.bridge().is_some() && s.bridge_max > 0. {
+        // A bridge can cross what the terrain estimate would treat as a wall.
+        let open = RoutingSettings { max_fill: s.max_fill + 1e-6, ..s.clone() };
+        let none = Obstacles::none();
+        CostField::new(terrain, waypoints, &open, if s.bridge_over_forbidden { &none } else { forbidden }, s.tolerance, cancel)?
+    } else {
+        CostField::new(terrain, waypoints, s, forbidden, s.tolerance, cancel)?
+    };
     let shortest = all.iter().map(|p| p.item.model.length).fold(f64::INFINITY, f64::min);
     let mut routes: Vec<Vec<(usize, Point, f64)>> = vec![vec![]];
     let mut starts: Vec<TrackStart> = Vec::new();
@@ -779,19 +857,35 @@ pub fn plan_track(
             .collect();
     }
     let steps = routes.swap_remove(0);
-    let mut parts = Vec::with_capacity(steps.len());
+    // Straight runs are merged within each stretch between bridges.
+    let mut stretches = vec![Vec::new()];
+    let mut spans = Vec::new();
     for (piece, p, heading) in steps {
+        if piece >= BRIDGE {
+            let kit = crossings.bridge().context("Brak modelu mostu")?;
+            spans.push((kit.lay(p, heading, piece - BRIDGE).0, kit.deck));
+            stretches.push(Vec::new());
+            continue;
+        }
         let piece = &all[piece];
         let at = crate::geometry::Port { p, outward: [heading.cos(), heading.sin()] };
-        parts.push(crate::roads::place(piece.item, at, piece.reverse)?);
+        stretches.last_mut().unwrap().push(crate::roads::place(piece.item, at, piece.reverse)?);
     }
-    let mut parts = crate::roads::merge_straight_runs(parts, catalog, family, |item, line| {
-        !cancel.load(AO::Relaxed)
-            && line.windows(2).all(|w| permitted(w[0], w[1], terrain, s, forbidden))
-            && crossings.allows(item, line, s.tolerance)
-    })?;
+    let mut parts = Vec::new();
+    let mut bridges = Vec::new();
+    let mut spans = spans.into_iter();
+    for stretch in stretches {
+        parts.extend(crate::roads::merge_straight_runs(stretch, catalog, family, |item, line| {
+            !cancel.load(AO::Relaxed)
+                && line.windows(2).all(|w| permitted(w[0], w[1], terrain, s, forbidden))
+                && crossings.allows(item, line, s.tolerance)
+        })?);
+        if let Some((pieces, deck)) = spans.next() {
+            bridges.push(crate::document::Bridge { deck, after: parts.len(), pieces });
+        }
+    }
     let extras = crossings.apply(&mut parts, catalog)?;
-    Ok(Planned { parts, extras })
+    Ok(Planned { parts, extras, bridges })
 }
 
 /// One leg of [`plan_track`]; `Err((budget ran out, closest approach))` when nothing is found.
@@ -915,6 +1009,27 @@ fn track_leg(
             exhausted = true;
             break;
         }
+        // Where the track cannot simply go on straight, it may bridge the gap.
+        if let Some(kit) = crossings.bridge()
+            && n.piece != usize::MAX
+            && n.piece < BRIDGE
+            && !all.iter().filter(|p| p.turn.abs() < 1e-3 && !short(p)).any(|p| fits(&world_line(&n, p), p, n.band).is_some())
+            && let Some(span) = bridge_span(n.p, n.heading, n.band, kit, terrain, s, forbidden, s.tolerance, long)
+        {
+            push(
+                TrackState {
+                    p: span.end,
+                    heading: n.heading,
+                    g: n.g + span.length * s.bridge_weight + 2. * kit.length(),
+                    parent: index,
+                    piece: BRIDGE + span.count,
+                    origin: n.origin,
+                    band: Some((span.deck, span.deck)),
+                },
+                &mut nodes,
+                &mut heap,
+            );
+        }
         for (i, piece) in all.iter().enumerate() {
             if short(piece) && distance > long + reach {
                 continue;
@@ -965,6 +1080,42 @@ fn track_leg(
 pub struct Planned {
     pub parts: Vec<crate::roads::PlacedPart>,
     pub extras: Vec<crate::roads::PlacedPart>,
+    pub bridges: Vec<crate::document::Bridge>,
+}
+/// Fits models to each stretch of a road between its bridges and lays the bridges between.
+fn fit_bridged(
+    path: &[Point],
+    spans: &[(Point, Point, usize)],
+    kit: &crate::rails::BridgeKit,
+    family: &str,
+    catalog: &[crate::roads::CatalogPart],
+    s: &RoutingSettings,
+    allowed: impl Fn(Point, Point) -> bool + Copy,
+) -> Result<Planned> {
+    let at = |p: Point, from: usize| path[from..].iter().position(|q| norm(sub(*q, p)) < 1e-6).map(|i| i + from).context("Most poza trasą");
+    let mut planned = Planned::default();
+    let mut from = 0;
+    let mut start: Option<Point> = None;
+    for &(a, b, count) in spans {
+        let (ia, ib) = (at(a, from)?, at(b, from)?);
+        let mut stretch = path[from..=ia].to_vec();
+        if let Some(p) = start {
+            stretch[0] = p;
+        }
+        planned.parts.extend(crate::roads::fit_path(&stretch, family, catalog, s, allowed)?);
+        let end = crate::roads::endpoint(&planned.parts, catalog)?.p;
+        let d = sub(b, end);
+        let (pieces, exit) = kit.lay(end, d[1].atan2(d[0]), count);
+        planned.bridges.push(crate::document::Bridge { deck: kit.deck, after: planned.parts.len(), pieces });
+        start = Some(exit);
+        from = ib;
+    }
+    let mut stretch = path[from..].to_vec();
+    if let Some(p) = start {
+        stretch[0] = p;
+    }
+    planned.parts.extend(crate::roads::fit_path(&stretch, family, catalog, s, allowed)?);
+    Ok(planned)
 }
 /// Terrain route through `waypoints` fitted with models of `family`. The fitted models may
 /// deviate from the searched line by up to `tolerance`, so the search first keeps a 10 %
@@ -1001,18 +1152,24 @@ pub fn plan(
         .fold(f64::INFINITY, f64::min);
     let radius = if tightest.is_finite() { tightest.max(s.min_radius) * 1.05 } else { s.min_radius };
     let mut error = None;
-    for margin in [0.9, 1.] {
-        let search = RoutingSettings {
-            max_grade: s.max_grade * margin,
-            min_radius: radius,
-            ..s.clone()
-        };
-        let attempt = find(terrain, waypoints, &search, forbidden, cancel)
-            .and_then(|path| crate::roads::fit_path(&path, family, catalog, s, allowed));
-        ensure!(!cancel.load(AO::Relaxed), "Wyznaczanie anulowane");
-        match attempt {
-            Ok(parts) => return Ok(Planned { parts, extras: vec![] }),
-            Err(e) => error = Some(e),
+    let kit = crossings.bridge().filter(|_| s.bridge_max > 0.);
+    // Bridges first; a road that cannot be fitted around them is tried without.
+    for bridges in if kit.is_some() { vec![kit, None] } else { vec![None] } {
+        for margin in [0.9, 1.] {
+            let search = RoutingSettings {
+                max_grade: s.max_grade * margin,
+                min_radius: radius,
+                ..s.clone()
+            };
+            let attempt = find_spans(terrain, waypoints, &search, forbidden, bridges, cancel).and_then(|(path, spans)| match bridges {
+                Some(k) if !spans.is_empty() => fit_bridged(&path, &spans, k, family, catalog, s, allowed),
+                _ => Ok(Planned { parts: crate::roads::fit_path(&path, family, catalog, s, allowed)?, ..Default::default() }),
+            });
+            ensure!(!cancel.load(AO::Relaxed), "Wyznaczanie anulowane");
+            match attempt {
+                Ok(planned) => return Ok(planned),
+                Err(e) => error = Some(e),
+            }
         }
     }
     Err(error.unwrap())
@@ -1029,6 +1186,18 @@ pub fn find(
     forbidden: &Obstacles,
     cancel: &AtomicBool,
 ) -> Result<Vec<Point>> {
+    find_spans(terrain, waypoints, s, forbidden, None, cancel).map(|f| f.0)
+}
+/// [`find`] that may bridge gaps: also returns each bridge's ends and number of pieces.
+#[allow(clippy::type_complexity)]
+fn find_spans(
+    terrain: &Terrain,
+    waypoints: &[Point],
+    s: &RoutingSettings,
+    forbidden: &Obstacles,
+    kit: Option<&crate::rails::BridgeKit>,
+    cancel: &AtomicBool,
+) -> Result<(Vec<Point>, Vec<(Point, Point, usize)>)> {
     ensure!(waypoints.len() >= 2, "Wskaż przynajmniej dwa punkty");
     ensure!(
         [s.cell, s.max_grade, s.slope_weight, s.min_radius, s.tolerance]
@@ -1053,15 +1222,22 @@ pub fn find(
         waypoints.windows(2).all(|w| norm(sub(w[1], w[0])) > 1e-6),
         "Usuń powtórzone punkty trasy"
     );
-    let field = CostField::new(terrain, waypoints, s, forbidden, clearance, cancel)?;
+    let field = if kit.is_some() {
+        // A bridge can cross what the terrain estimate would treat as a wall.
+        let open = RoutingSettings { max_fill: s.max_fill + 1e-6, ..s.clone() };
+        let none = Obstacles::none();
+        CostField::new(terrain, waypoints, &open, if s.bridge_over_forbidden { &none } else { forbidden }, clearance, cancel)?
+    } else {
+        CostField::new(terrain, waypoints, s, forbidden, clearance, cancel)?
+    };
     // Legs are searched one after another. Each leg keeps several ways of arriving at its
     // target (different headings); the next leg starts from all of them with their costs,
     // so it picks the combination that suits it, and the heading stays continuous through
     // every intermediate waypoint.
-    let mut paths = vec![vec![waypoints[0]]];
+    let mut paths = vec![(vec![waypoints[0]], Vec::new())];
     let mut starts: Vec<Start> = Vec::new();
     for stage in 0..waypoints.len() - 1 {
-        let arrivals = leg(terrain, waypoints, stage, &starts, s, forbidden, &field, cancel)?;
+        let arrivals = leg(terrain, waypoints, stage, &starts, s, forbidden, &field, kit, cancel)?;
         starts = arrivals
             .iter()
             .enumerate()
@@ -1070,15 +1246,16 @@ pub fn find(
         paths = arrivals
             .into_iter()
             .map(|a| {
-                let mut p = paths[a.origin].clone();
+                let (mut p, mut spans): (Vec<Point>, Vec<(Point, Point, usize)>) = paths[a.origin].clone();
                 p.extend(a.line.into_iter().skip(1));
-                p
+                spans.extend(a.spans);
+                (p, spans)
             })
             .collect();
     }
-    let mut out = paths.swap_remove(0);
+    let (mut out, spans) = paths.swap_remove(0);
     out.dedup_by(|a, b| norm(sub(*a, *b)) < 1e-6);
-    Ok(out)
+    Ok((out, spans))
 }
 /// A pose at a leg's starting waypoint: heading, accumulated cost and the route it ends.
 struct Start {
@@ -1094,6 +1271,7 @@ struct Arrival {
     origin: usize,
     band: Option<(f64, f64)>,
     line: Vec<Point>,
+    spans: Vec<(Point, Point, usize)>,
 }
 
 /// One leg, from `waypoints[stage]` exactly through `waypoints[stage + 1]`. The exact
@@ -1109,13 +1287,14 @@ fn leg(
     s: &RoutingSettings,
     forbidden: &Obstacles,
     field: &CostField,
+    kit: Option<&crate::rails::BridgeKit>,
     cancel: &AtomicBool,
 ) -> Result<Vec<Arrival>> {
     let mut closest = f64::INFINITY;
     let length = norm(sub(waypoints[stage + 1], waypoints[stage]));
     for (weight, budget) in [(1., 500_000), (1.5, 1_000_000), (3., 1_500_000)] {
         match leg_search(
-            terrain, waypoints, stage, starts, s, forbidden, field, cancel, weight, budget,
+            terrain, waypoints, stage, starts, s, forbidden, field, kit, cancel, weight, budget,
         )? {
             Ok(arrivals) => return Ok(arrivals),
             Err((true, near)) => closest = closest.min(near),
@@ -1151,6 +1330,7 @@ fn leg_search(
     s: &RoutingSettings,
     forbidden: &Obstacles,
     field: &CostField,
+    kit: Option<&crate::rails::BridgeKit>,
     cancel: &AtomicBool,
     weight: f64,
     budget: usize,
@@ -1226,6 +1406,7 @@ fn leg_search(
                 length: 0.,
                 origin: start.origin,
                 band: start.band,
+                bridge: 0,
             },
             &mut nodes,
             &mut heap,
@@ -1288,6 +1469,7 @@ fn leg_search(
                         length,
                         origin: n.origin,
                         band: Some((b.lo, b.hi)),
+                        bridge: 0,
                     },
                     &mut nodes,
                     &mut heap,
@@ -1301,6 +1483,30 @@ fn leg_search(
         }
         for delta in turns {
             expand(delta, step, 0, None);
+        }
+        // Where the road cannot simply go on straight, it may bridge the gap.
+        if let Some(kit) = kit
+            && n.parent != usize::MAX
+            && n.bridge == 0
+            && profile_band(&arc(n.p, n.heading, 0., step), terrain, s, forbidden, clearance, n.band).is_none()
+            && let Some(span) = bridge_span(n.p, n.heading, n.band, kit, terrain, s, forbidden, clearance, step)
+        {
+            push(
+                State {
+                    p: span.end,
+                    heading: n.heading,
+                    stage: 0,
+                    g: n.g + span.length * s.bridge_weight + 2. * kit.length(),
+                    parent: index,
+                    delta: 0.,
+                    length: span.length,
+                    origin: n.origin,
+                    band: Some((span.deck, span.deck)),
+                    bridge: span.count,
+                },
+                &mut nodes,
+                &mut heap,
+            );
         }
     }
     ensure!(!cancel.load(AO::Relaxed), "Wyznaczanie anulowane");
@@ -1323,14 +1529,18 @@ fn leg_search(
             }
             chain.reverse();
             let mut line = vec![from];
+            let mut spans = Vec::new();
             for pair in chain.windows(2) {
                 let (a, b) = (nodes[pair[0]], nodes[pair[1]]);
                 let mut part = arc(a.p, a.heading, b.delta, b.length);
                 *part.last_mut().unwrap() = b.p;
                 line.extend(part.into_iter().skip(1));
+                if b.bridge > 0 {
+                    spans.push((a.p, b.p, b.bridge));
+                }
             }
             let n = nodes[goal];
-            Arrival { heading: n.heading, g: n.g, origin: nodes[chain[0]].origin, band: n.band, line }
+            Arrival { heading: n.heading, g: n.g, origin: nodes[chain[0]].origin, band: n.band, line, spans }
         })
         .collect()))
 }
@@ -1695,5 +1905,81 @@ mod tests {
         assert!(!exact.segment_blocked([250., 470.], [350., 470.], 0.));
         drop(t);
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn kit() -> crate::rails::BridgeKit {
+        crate::rails::BridgeKit { model: "b.p3d".into(), start: [0., -12.5], end: [0., 12.5], deck: 8., pier: 20., max_pieces: usize::MAX }
+    }
+
+    #[test]
+    fn forbidden_areas_are_bridged_only_when_the_user_allows_it() {
+        let (dir, t) = hill("bridge", 0., 60.);
+        let cancel = AtomicBool::new(false);
+        let refused = RoutingSettings { bridge_max: 100., ..Default::default() };
+        let s = RoutingSettings { bridge_over_forbidden: true, ..refused.clone() };
+        let (a, b) = ([100., 300.], [500., 300.]);
+        // A river across the whole map.
+        let river = ForbiddenLine { points: vec![[300., -20.], [300., 640.]], width: 20. };
+        let water = Obstacles::new(&[], std::slice::from_ref(&river), &WaterSettings::default(), Some(&t), &cancel).unwrap();
+        assert!(find(&t, &[a, b], &s, &water, &cancel).is_err(), "no way across without a bridge");
+        let kit = kit();
+        assert!(find_spans(&t, &[a, b], &refused, &water, Some(&kit), &cancel).is_err(), "forbidden unless allowed");
+        let (path, spans) = find_spans(&t, &[a, b], &s, &water, Some(&kit), &cancel).unwrap();
+        assert_eq!(spans.len(), 1, "{spans:?}");
+        let (p, q, count) = spans[0];
+        assert!(p[0] < 290. && q[0] > 310., "{p:?} {q:?}");
+        assert!((norm(sub(q, p)) - count as f64 * 25.).abs() < 1e-6);
+        assert!(path.iter().any(|x| norm(sub(*x, p)) < 1e-6) && path.iter().any(|x| norm(sub(*x, q)) < 1e-6));
+        // Longer than allowed: no bridge.
+        let short = RoutingSettings { bridge_max: 25., ..s.clone() };
+        assert!(find_spans(&t, &[a, b], &short, &water, Some(&kit), &cancel).is_err());
+        // The same goes for a drawn forbidden area across the map.
+        let wall = vec![[295., -20.], [305., -20.], [305., 640.], [295., 640.]];
+        let drawn = Obstacles::new(&[wall], &[], &WaterSettings::default(), Some(&t), &cancel).unwrap();
+        assert!(find_spans(&t, &[a, b], &refused, &drawn, Some(&kit), &cancel).is_err());
+        assert_eq!(find_spans(&t, &[a, b], &s, &drawn, Some(&kit), &cancel).unwrap().1.len(), 1);
+        drop(t);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_viaduct_needs_a_gap_its_supports_can_reach() {
+        // A 60 m wide, deep gorge across a flat plain.
+        let dir = std::env::temp_dir().join(format!("road-gorge-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let build = |depth: f64, name: &str| {
+            let mut text = "ncols 61\nnrows 61\nxllcorner 0\nyllcorner 0\ncellsize 10\n".to_owned();
+            for _ in 0..61 {
+                for col in 0..61 {
+                    let x = col as f64 * 10. + 5.;
+                    text.push_str(&format!("{:.2} ", if (270. ..330.).contains(&x) { 100. - depth } else { 100. }));
+                }
+                text.push('\n');
+            }
+            let source = dir.join(format!("{name}.asc"));
+            std::fs::write(&source, text).unwrap();
+            crate::terrain::import(&source, &dir.join(name), &AtomicBool::new(false)).unwrap()
+        };
+        let cancel = AtomicBool::new(false);
+        let s = RoutingSettings { bridge_max: 150., ..Default::default() };
+        let kit = kit();
+        let (a, b) = ([100., 300.], [500., 300.]);
+        let reachable = build(15., "low");
+        let (_, spans) = find_spans(&reachable, &[a, b], &s, &Obstacles::none(), Some(&kit), &cancel).unwrap();
+        assert_eq!(spans.len(), 1);
+        assert!(spans[0].0[0] < 270. && spans[0].1[0] > 330., "{spans:?}");
+        let too_deep = build(40., "deep");
+        assert!(find_spans(&too_deep, &[a, b], &s, &Obstacles::none(), Some(&kit), &cancel).map_or(true, |f| f.1.is_empty()));
+        // Above the bridge height limit there is no bridge either.
+        let low = RoutingSettings { bridge_height: 10., ..s.clone() };
+        assert!(find_spans(&reachable, &[a, b], &low, &Obstacles::none(), Some(&kit), &cancel).map_or(true, |f| f.1.is_empty()));
+        // An embankment high enough makes the bridge unnecessary.
+        let shallow = build(4., "shallow");
+        let fill = RoutingSettings { max_fill: 6., max_grade: 100., ..s.clone() };
+        let (_, spans) = find_spans(&shallow, &[a, b], &fill, &Obstacles::none(), Some(&kit), &cancel).unwrap();
+        assert!(spans.is_empty(), "{spans:?}");
+        drop((reachable, too_deep, shallow));
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

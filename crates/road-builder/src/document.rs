@@ -47,6 +47,33 @@ pub struct Route {
     /// ASC stays untouched and removing the route restores the terrain.
     #[serde(default)]
     pub grading: Option<RouteGrading>,
+    /// Bridges in gaps of the route; the parts on either side are separate stretches.
+    #[serde(default)]
+    pub bridges: Vec<Bridge>,
+}
+impl Route {
+    /// The connected runs of parts between bridges.
+    pub fn stretches(&self) -> Vec<&[PlacedPart]> {
+        let mut out = Vec::with_capacity(self.bridges.len() + 1);
+        let mut from = 0;
+        for b in &self.bridges {
+            let to = b.after.clamp(from, self.parts.len());
+            out.push(&self.parts[from..to]);
+            from = to;
+        }
+        out.push(&self.parts[from..]);
+        out.retain(|p| !p.is_empty());
+        out
+    }
+}
+/// A bridge made of identical objects, standing in a gap of its route.
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct Bridge {
+    /// Height of the driving surface above the model's origin.
+    pub deck: f64,
+    /// Number of route parts before the bridge.
+    pub after: usize,
+    pub pieces: Vec<PlacedPart>,
 }
 /// Settings of a route's terrain adaptation; the cells follow from these and the route.
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
@@ -71,6 +98,19 @@ pub struct RoutingSettings {
     pub max_cut: f64,
     #[serde(default)]
     pub max_fill: f64,
+    /// Highest a bridge may stand above the ground, m; it takes over where an embankment
+    /// of `max_fill` is not enough. 0 turns bridges off.
+    #[serde(default)]
+    pub bridge_height: f64,
+    /// Longest bridge the routing may build, m; 0 turns bridges off.
+    #[serde(default)]
+    pub bridge_max: f64,
+    /// Bridges may also cross forbidden areas, rivers and water.
+    #[serde(default)]
+    pub bridge_over_forbidden: bool,
+    /// Cost of a metre of bridge in metres of road.
+    #[serde(default = "default_bridge_weight")]
+    pub bridge_weight: f64,
     /// Cost of earthwork in metres of road per m² of cut or fill along the route.
     #[serde(default = "default_earth_weight")]
     pub earth_weight: f64,
@@ -89,6 +129,10 @@ impl Default for RoutingSettings {
             max_cut: 0.,
             max_fill: 0.,
             earth_weight: default_earth_weight(),
+            bridge_height: 20.,
+            bridge_max: 150.,
+            bridge_over_forbidden: false,
+            bridge_weight: default_bridge_weight(),
         }
     }
 }
@@ -104,6 +148,10 @@ impl RoutingSettings {
             max_cut: 0.,
             max_fill: 0.,
             earth_weight: default_earth_weight(),
+            bridge_height: 20.,
+            bridge_max: 150.,
+            bridge_over_forbidden: false,
+            bridge_weight: default_bridge_weight(),
         }
     }
     fn valid(&self) -> bool {
@@ -218,6 +266,9 @@ impl Default for Document {
             road_colors: Default::default(),
         }
     }
+}
+fn default_bridge_weight() -> f64 {
+    4.
 }
 fn default_auto_grade() -> bool {
     true

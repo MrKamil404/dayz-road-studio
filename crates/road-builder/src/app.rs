@@ -25,6 +25,8 @@ use std::{
 const INK: Color32 = Color32::from_rgb(210, 218, 230);
 const ROAD: Color32 = Color32::from_rgb(92, 182, 236);
 const SELECT: Color32 = Color32::from_rgb(255, 216, 70);
+/// Terrain layers per graded route, one for each stretch between bridges.
+const STRETCHES: u64 = 1000;
 const COMPOSE_LABEL: &str = "Dopasowanie terenu pod trasami";
 const TRACK: Color32 = Color32::from_rgb(150, 128, 104);
 
@@ -60,7 +62,7 @@ enum Loaded {
     Satellite(PathBuf, Raster),
     Terrain(PathBuf, PathBuf, Terrain),
     /// Route index, points, chained pieces and extra objects (level-crossing decks).
-    Route(usize, Vec<Point>, Vec<roads::PlacedPart>, Vec<roads::PlacedPart>),
+    Route(usize, Vec<Point>, Vec<roads::PlacedPart>, Vec<roads::PlacedPart>, Vec<dayz_road_tool::document::Bridge>),
     Export(PathBuf),
     Shp(Vec<dayz_road_tool::shapefile::Line>, String, String),
     Composed(dayz_road_tool::grading::Composed),
@@ -672,15 +674,21 @@ impl App {
                 Ok(Loaded::AscExport(path)) => {
                     self.status = format!("Zapisano zmodyfikowany teren: {}", path.display())
                 }
-                Ok(Loaded::Route(index, points, parts, extras)) => {
+                Ok(Loaded::Route(index, points, parts, extras, bridges)) => {
                     if index < self.doc.routes.len() {
                         self.checkpoint();
                         self.doc.routes[index].points = points;
                         self.doc.routes[index].parts = parts;
                         self.doc.routes[index].extras = extras;
+                        let spans = bridges.len();
+                        self.doc.routes[index].bridges = bridges;
                         self.adapt_generated(index);
                         self.rebuild();
-                        self.status = "Trasa wyznaczona i złożona z modeli".into();
+                        self.status = if spans > 0 {
+                            format!("Trasa wyznaczona i złożona z modeli, mosty: {spans}")
+                        } else {
+                            "Trasa wyznaczona i złożona z modeli".into()
+                        };
                     }
                 }
                 Ok(Loaded::Export(path)) => {
@@ -750,7 +758,7 @@ impl App {
                             points: line.points,
                             parts: vec![],
                             replaces: None, rail: dayz_road_tool::rails::is_track_family(&family), extras: vec![],
-                            grading: None,
+                            grading: None, bridges: vec![],
                         });
                     }
                     self.selected = Some(Selection::Route(first));
@@ -818,7 +826,7 @@ impl App {
         let routes = self.doc.routes.clone();
         for (i, r) in routes.iter().enumerate() {
             if let Ok(mut s) = roads::shape(&r.parts, &mut self.lib) {
-                for e in &r.extras {
+                for e in r.extras.iter().chain(r.bridges.iter().flat_map(|b| &b.pieces)) {
                     if let Ok(m) = self.lib.model(&e.model) {
                         s.place(&m, -e.rotation.to_radians(), e.position);
                     }
@@ -983,7 +991,7 @@ impl App {
             points: std::mem::take(&mut self.draft),
             parts: vec![],
             replaces: None, rail: dayz_road_tool::rails::is_track_family(&self.family), extras: vec![],
-            grading: None,
+            grading: None, bridges: vec![],
         });
         self.selected = Some(Selection::Route(index));
         self.status = "Trasa zapisana. Dopasuj modele lub uruchom automat.".into();
@@ -1062,6 +1070,7 @@ impl App {
         let catalog = self.catalog.clone();
         let obstacles = self.obstacle_input();
         let (roads_near, rail_folder) = self.crossing_input();
+        let road_folder = self.doc.models.clone();
         let dir = self.terrain_dir.clone();
         let meta = self.terrain.as_ref().map(|t| t.meta.clone());
         // A route is planned on the terrain as it would be without its own old adaptation.
@@ -1077,11 +1086,18 @@ impl App {
             move |cancel| {
                 let terrain = planning_terrain(dir, meta, without_own, &catalog, &cancel)?;
                 let forbidden = obstacles.get(terrain.as_ref(), &cancel)?;
-                let crossings = if route.rail {
-                    dayz_road_tool::rails::Crossings::new(roads_near, &route.family, &catalog, &rail_folder)
+                let (crossings, bridge) = if route.rail {
+                    (
+                        dayz_road_tool::rails::Crossings::new(roads_near, &route.family, &catalog, &rail_folder),
+                        dayz_road_tool::rails::BridgeKit::for_track(&rail_folder, &route.family),
+                    )
                 } else {
-                    dayz_road_tool::rails::Crossings::none()
+                    (
+                        dayz_road_tool::rails::Crossings::none(),
+                        dayz_road_tool::rails::BridgeKit::for_road(&road_folder, &route.family, &catalog),
+                    )
                 };
+                let crossings = crossings.with_bridge(bridge.filter(|_| automatic));
                 let planned = if automatic {
                     // The terrain route already respects the minimum radius and passes
                     // through every waypoint; it is fitted without rounding it again.
@@ -1107,11 +1123,11 @@ impl App {
                     })?;
                     // Hand-placed tracks also get their level crossings.
                     let extras = crossings.apply(&mut parts, &catalog)?;
-                    routing::Planned { parts, extras }
+                    routing::Planned { parts, extras, ..Default::default() }
                 };
                 ensure!(!cancel.load(Ordering::Relaxed), "Anulowano");
                 // Keep the user's waypoints editable; the fitted models carry the terrain route.
-                Ok(Loaded::Route(index, route.points.clone(), planned.parts, planned.extras))
+                Ok(Loaded::Route(index, route.points.clone(), planned.parts, planned.extras, planned.bridges))
             },
         );
     }
@@ -1123,7 +1139,7 @@ impl App {
         let route = &mut self.doc.routes[index];
         route.points.insert(segment + 1, point);
         route.parts.clear();
-        route.extras.clear();
+        route.extras.clear(); route.bridges.clear();
         self.rebuild();
     }
 
@@ -1135,13 +1151,14 @@ impl App {
         let route = &mut self.doc.routes[index];
         route.points.remove(point);
         route.parts.clear();
-        route.extras.clear();
+        route.extras.clear(); route.bridges.clear();
         self.rebuild();
     }
 
     fn export_rails(&mut self) {
         let lang = self.language;
-        let tracks: Vec<_> = self.doc.routes.iter().filter(|r| r.rail).cloned().collect();
+        // Tracks and the bridges of roads are Terrain Builder objects.
+        let tracks: Vec<_> = self.doc.routes.iter().filter(|r| r.rail || !r.bridges.is_empty()).cloned().collect();
         if tracks.is_empty() {
             self.status = "Brak torowisk do eksportu".into();
             return;
@@ -1175,8 +1192,7 @@ impl App {
                 t
             });
             let forbidden = obstacles.get(terrain.as_ref(), &cancel)?;
-            for route in &tracks {
-                let line = roads::centerline(&route.parts, &catalog);
+            for (route, line) in tracks.iter().filter(|r| r.rail).flat_map(|r| r.stretches().into_iter().map(move |p| (r, p))).map(|(r, p)| (r, roads::centerline(p, &catalog))) {
                 for w in line.windows(2) {
                     ensure!(!cancel.load(Ordering::Relaxed), "Anulowano eksport");
                     ensure!(
@@ -1191,7 +1207,7 @@ impl App {
             }
             // Crossings follow the pieces as they are now, also after manual edits.
             let mut tracks = tracks;
-            for route in &mut tracks {
+            for route in tracks.iter_mut().filter(|r| r.rail) {
                 let crossings = dayz_road_tool::rails::Crossings::new(roads_near.clone(), &route.family, &catalog, &rail_folder);
                 route.extras = crossings
                     .apply(&mut route.parts, &catalog)
@@ -1244,8 +1260,7 @@ impl App {
                         t
                     });
                 let forbidden = obstacles.get(terrain.as_ref(), &cancel)?;
-                for route in d.routes.iter().filter(|r| !r.rail) {
-                    let line = roads::centerline(&route.parts, &c);
+                for (route, line) in d.routes.iter().filter(|r| !r.rail).flat_map(|r| r.stretches().into_iter().map(move |p| (r, p))).map(|(r, p)| (r, roads::centerline(p, &c))) {
                     for w in line.windows(2) {
                         ensure!(!cancel.load(Ordering::Relaxed), "Anulowano eksport");
                         ensure!(
@@ -1345,10 +1360,10 @@ if ui.button(lang.tr("Usuń ostatni punkt")).clicked(){self.draft.pop();self.cle
             if let Some(Selection::Route(i))=self.selected {
                 if ui.button(lang.tr("Edytuj punkty")).clicked(){self.tool=Tool::Edit;self.edit_selected=None;self.edit_extend=None;self.draft.clear();self.clear_live();}
                 if let Some(r)=self.doc.routes.get_mut(i) && ui.text_edit_singleline(&mut r.name).changed(){self.dirty=true;}
-if ui.button(lang.tr("Ustaw typ wybranej trasy")).clicked(){self.checkpoint();self.doc.routes[i].family=self.family.clone();self.doc.routes[i].rail=dayz_road_tool::rails::is_track_family(&self.family);self.doc.routes[i].parts.clear();self.doc.routes[i].extras.clear();self.rebuild();}
+if ui.button(lang.tr("Ustaw typ wybranej trasy")).clicked(){self.checkpoint();self.doc.routes[i].family=self.family.clone();self.doc.routes[i].rail=dayz_road_tool::rails::is_track_family(&self.family);self.doc.routes[i].parts.clear();self.doc.routes[i].extras.clear(); self.doc.routes[i].bridges.clear();self.rebuild();}
                 if ui.button(lang.tr("Dopasuj modele do punktów")).clicked(){self.generate(false);}
 if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true);}
-                if ui.button(lang.tr("Usuń ostatni segment")).clicked(){self.checkpoint();self.doc.routes[i].parts.pop();self.doc.routes[i].extras.clear();self.rebuild();}
+                if ui.button(lang.tr("Usuń ostatni segment")).clicked(){self.checkpoint();self.doc.routes[i].parts.pop();self.doc.routes[i].extras.clear(); self.doc.routes[i].bridges.clear();self.rebuild();}
             }
             if let Some(Selection::Existing(id))=self.selected {ui.label(lang.tr(&(format!("Droga TV4P #{id}"))));ui.small(lang.tr("Przeciągnij drogę w trybie Wybierz, aby ją przesunąć."));if ui.button(lang.tr("Obróć o 5°")).clicked(){self.checkpoint();if let Some(t)=self.doc.transforms.iter_mut().find(|t|t.0==id){t.2+=5.;}else{self.doc.transforms.push((id,[0.,0.],5.));}self.rebuild();}}
             if self.selected.is_some() && ui.button(lang.tr("Usuń wybraną drogę")).clicked(){self.delete();}
@@ -1501,6 +1516,9 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
                                 ("Wykop maks. m", &mut s.max_cut, 0.0..=100.),
                                 ("Nasyp maks. m", &mut s.max_fill, 0.0..=100.),
                                 ("Kara za roboty ziemne", &mut s.earth_weight, 0.0..=100.),
+                                ("Most maks. wysokość m", &mut s.bridge_height, 0.0..=100.),
+                                ("Most maks. długość m", &mut s.bridge_max, 0.0..=2000.),
+                                ("Kara za most", &mut s.bridge_weight, 0.0..=100.),
                             ] {
                                 ui.horizontal(|ui| {
                                     ui.label(lang.tr(label));
@@ -1511,6 +1529,9 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
                                         self.dirty = true;
                                     }
                                 });
+                            }
+                            if ui.checkbox(&mut s.bridge_over_forbidden, lang.tr("Mosty mogą przecinać zakazy")).on_hover_text(lang.tr("Pozwala mostom przechodzić nad obszarami zakazanymi, rzekami i wodą")).changed() {
+                                self.dirty = true;
                             }
                             if rail {
                                 ui.small(lang.tr("Dotyczy tras typu Rail_Track*. Łuk 10° / 25 m ma promień ok. 143 m; dla Rail_TrackSmall zmniejsz promień min. do ok. 20 m."));
@@ -1559,7 +1580,7 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
             Ok(()) => {
                 self.checkpoint();
                 self.doc.routes[i].parts = parts;
-                self.doc.routes[i].extras.clear();
+                self.doc.routes[i].extras.clear(); self.doc.routes[i].bridges.clear();
                 self.rebuild();
             }
             Err(e) => self.status = e.to_string(),
@@ -1697,7 +1718,7 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
             points: std::mem::take(&mut self.draft),
             parts: g.parts,
             replaces: None, rail: dayz_road_tool::rails::is_track_family(&self.family), extras: vec![],
-            grading: None,
+            grading: None, bridges: vec![],
         });
         self.selected = Some(Selection::Route(i));
         self.adapt_generated(i);
@@ -2004,17 +2025,20 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
             .iter()
             .enumerate()
             .filter(|(i, r)| Some(*i) != skip && !r.parts.is_empty())
-            .filter_map(|(_, r)| {
-                r.grading.map(|g| dayz_road_tool::grading::Layer {
-                    order: g.order,
-                    parts: r.parts.clone(),
-                    blend_width: g.blend_width,
-                    earthwork: dayz_road_tool::grading::Earthwork {
-                        max_grade: g.max_grade,
-                        max_cut: g.max_cut,
-                        max_fill: g.max_fill,
-                        side_slope: g.side_slope,
-                    },
+            .flat_map(|(_, r)| {
+                // Each stretch between bridges gets its own profile; the gaps stay as they are.
+                r.stretches().into_iter().enumerate().filter_map(move |(k, parts)| {
+                    r.grading.map(|g| dayz_road_tool::grading::Layer {
+                        order: g.order * STRETCHES + k as u64,
+                        parts: parts.to_vec(),
+                        blend_width: g.blend_width,
+                        earthwork: dayz_road_tool::grading::Earthwork {
+                            max_grade: g.max_grade,
+                            max_cut: g.max_cut,
+                            max_fill: g.max_fill,
+                            side_slope: g.side_slope,
+                        },
+                    })
                 })
             })
             .collect()
@@ -2106,16 +2130,17 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
             self.terrain_changed();
         }
         let name = |doc: &Document, order: u64| {
-            doc.routes.iter().find(|r| r.grading.is_some_and(|g| g.order == order)).map(|r| r.name.clone()).unwrap_or_default()
+            doc.routes.iter().find(|r| r.grading.is_some_and(|g| g.order == order / STRETCHES)).map(|r| r.name.clone()).unwrap_or_default()
         };
         let request = self.grade_request.take();
         let mut message = None;
-        if let Some(order) = request
-            && let Some((_, report)) = c.reports.iter().find(|(o, _)| *o == order)
-        {
+        let requested: Vec<_> = c.reports.iter().filter(|(o, _)| Some(*o / STRETCHES) == request).map(|r| r.1).collect();
+        if !requested.is_empty() {
+            let changed: usize = requested.iter().map(|r| r.changed).sum();
+            let fill = requested.iter().map(|r| r.fill).fold(0., f64::max);
+            let cut = requested.iter().map(|r| r.cut).fold(0., f64::max);
             message = Some(format!(
-                "Dopasowano teren pod trasą: {} komórek ASC (nasyp do {:.1} m, wykop do {:.1} m). Usunięcie trasy przywróci teren.",
-                report.changed, report.fill, report.cut
+                "Dopasowano teren pod trasą: {changed} komórek ASC (nasyp do {fill:.1} m, wykop do {cut:.1} m). Usunięcie trasy przywróci teren."
             ));
         } else if changed {
             message = Some(format!("Zaktualizowano teren pod trasami: {}", c.reports.len()));
@@ -2128,7 +2153,7 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
         }
         for (order, _) in &c.failed {
             for r in &mut self.doc.routes {
-                if r.grading.is_some_and(|g| g.order == *order) {
+                if r.grading.is_some_and(|g| g.order == *order / STRETCHES) {
                     r.grading = None;
                     self.dirty = true;
                 }
@@ -2190,7 +2215,7 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
                 if r.parts.is_empty() {
                     vec![r.points.clone()]
                 } else {
-                    vec![roads::centerline(&r.parts, &self.catalog)]
+                    r.stretches().into_iter().map(|p| roads::centerline(p, &self.catalog)).collect()
                 }
             }
             Selection::Existing(_) => self
@@ -2459,7 +2484,7 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
                             points: vec![world],
                             parts: vec![],
                             replaces: None, rail: dayz_road_tool::rails::is_track_family(&self.family), extras: vec![],
-                            grading: None,
+                            grading: None, bridges: vec![],
                         });
                         self.selected = Some(Selection::Route(i));
                         self.add_segment();
@@ -2502,7 +2527,7 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
                             if p < r.points.len() {
                                 r.points[p] = world;
                                 r.parts.clear();
-                                r.extras.clear();
+                                r.extras.clear(); r.bridges.clear();
                             }
                         }
                     }
@@ -2513,7 +2538,7 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
                         for p in &mut r.points {
                             *p = geometry::add(*p, d);
                         }
-                        for p in r.parts.iter_mut().chain(&mut r.extras) {
+                        for p in r.parts.iter_mut().chain(&mut r.extras).chain(r.bridges.iter_mut().flat_map(|b| &mut b.pieces)) {
                             p.position = geometry::add(p.position, d);
                         }
                     }
@@ -2684,7 +2709,7 @@ if ui.button(lang.tr("Wyznacz trasę po terenie")).clicked(){self.generate(true)
         let index = if start { 0 } else { r.points.len() };
         r.points.insert(index, point);
         r.parts.clear();
-        r.extras.clear();
+        r.extras.clear(); r.bridges.clear();
         self.edit_selected = Some((route, index));
         self.rebuild();
     }
@@ -3181,10 +3206,10 @@ impl App {
 
     /// Road and track footprints overlapping `region`, coloured as on the 2D map.
     /// Track pieces of a project route laid on the current terrain.
-    fn track_poses(&self, id: Selection) -> Vec<dayz_road_tool::rails::Pose> {
+    fn track_poses(&self, id: Selection) -> Vec<Option<dayz_road_tool::rails::Pose>> {
         let (Selection::Route(i), Some(terrain)) = (id, &self.terrain) else { return vec![] };
-        let Some(route) = self.doc.routes.get(i).filter(|r| r.rail) else { return vec![] };
-        dayz_road_tool::rails::lay_on_terrain(&route.parts, &route.extras, &self.catalog, &|p| view3d::height(terrain, p)).unwrap_or_default()
+        let Some(route) = self.doc.routes.get(i).filter(|r| r.rail || !r.bridges.is_empty()) else { return vec![] };
+        dayz_road_tool::rails::route_poses(route, &self.catalog, &|p| view3d::height(terrain, p)).unwrap_or_default()
     }
     fn road_items(&self) -> Vec<view3d::RoadItem> {
         self.previews
@@ -3235,6 +3260,9 @@ impl App {
         if let Some(path) = var("DAYZ_SCREENSHOT_TV4P") {
             let mut lib = Library::new(self.doc.models.clone());
             self.base = tv4p::load(std::path::Path::new(&path), &mut lib).ok();
+            if let Ok((c, _)) = tv4p::catalog(std::path::Path::new(&path), &mut lib) {
+                self.catalog.extend(c);
+            }
         }
         if let Some(w) = nums("DAYZ_SCREENSHOT_WATER")
             && let Some(level) = w.first()
@@ -3254,8 +3282,28 @@ impl App {
             if let Ok((parts, _)) = dayz_road_tool::rails::catalog(folder, &mut lib) {
                 self.catalog.extend(parts);
                 let points: Vec<Point> = t.chunks(2).filter(|c| c.len() == 2).map(|c| [c[0], c[1]]).collect();
-                let s = dayz_road_tool::document::RoutingSettings { max_grade: 6., ..dayz_road_tool::document::RoutingSettings::rail() };
-                match routing::plan(terrain, &points, "Rail_TrackE", &self.catalog, &s, &routing::Obstacles::none(), &dayz_road_tool::rails::Crossings::none(), &AtomicBool::new(false)) {
+                let s = dayz_road_tool::document::RoutingSettings { max_grade: 6., bridge_over_forbidden: var("DAYZ_SCREENSHOT_OVER").is_some(), ..dayz_road_tool::document::RoutingSettings::rail() };
+                let river = nums("DAYZ_SCREENSHOT_RIVER").map(|r| ForbiddenLine { points: r.chunks(2).map(|c| [c[0], c[1]]).collect(), width: 15. });
+                let lines: Vec<_> = river.into_iter().collect();
+                let cancel = AtomicBool::new(false);
+                let forbidden = routing::Obstacles::new(&[], &lines, &WaterSettings::default(), Some(terrain), &cancel).unwrap_or_else(|_| routing::Obstacles::none());
+                let crossings = dayz_road_tool::rails::Crossings::none().with_bridge(dayz_road_tool::rails::BridgeKit::for_track(folder.as_ref(), "Rail_TrackE"));
+                if let Some(road) = nums("DAYZ_SCREENSHOT_ROAD").filter(|r| r.len() >= 4) {
+                    let road: Vec<Point> = road.chunks(2).map(|c| [c[0], c[1]]).collect();
+                    let family = var("DAYZ_SCREENSHOT_FAMILY").unwrap_or_else(|| "asf2".into());
+                    let kit = dayz_road_tool::rails::BridgeKit::for_road(&self.doc.models.clone(), &family, &self.catalog);
+                    let c = dayz_road_tool::rails::Crossings::none().with_bridge(kit);
+                    let over = var("DAYZ_SCREENSHOT_OVER").is_some();
+                    let road_settings = dayz_road_tool::document::RoutingSettings { bridge_over_forbidden: over, ..self.doc.routing.clone() };
+                    match routing::plan(terrain, &road, &family, &self.catalog, &road_settings, &forbidden, &c, &cancel) {
+                        Ok(p) => {
+                            eprintln!("road: {} parts, bridges {:?}", p.parts.len(), p.bridges.iter().map(|b| b.pieces.len()).collect::<Vec<_>>());
+                            self.doc.routes.push(Route { name: "Road".into(), family, points: road, parts: p.parts, replaces: None, rail: false, extras: p.extras, grading: None, bridges: p.bridges });
+                        }
+                        Err(e) => eprintln!("road: {e:#}"),
+                    }
+                }
+                match routing::plan(terrain, &points, "Rail_TrackE", &self.catalog, &s, &forbidden, &crossings, &cancel) {
                     Ok(planned) => self.doc.routes.push(Route {
                         name: "Railway".into(),
                         family: "Rail_TrackE".into(),
@@ -3264,7 +3312,7 @@ impl App {
                         replaces: None,
                         rail: true,
                         extras: planned.extras,
-                        grading: None,
+                        grading: None, bridges: planned.bridges,
                     }),
                     Err(e) => eprintln!("track: {e:#}"),
                 }
@@ -3457,7 +3505,7 @@ mod tests {
                 model: "asf2_25.p3d".into(), reverse: false,
                 position: [0., 0.], rotation: 0.,
             }], replaces: Some(42), rail: false, extras: vec![],
-            grading: None,
+            grading: None, bridges: vec![],
         });
         app.insert_route_point(0, 0, [50., 10.]);
         assert_eq!(app.doc.routes[0].points, vec![[0., 0.], [50., 10.], [100., 0.]]);
@@ -3554,7 +3602,7 @@ mod tests {
         let line = vec![[-200., 0.], [0., 0.], [200., 0.]];
         app.doc.routes.push(Route {
             name: "R".into(), family: "asf2".into(), points: line.clone(), parts: vec![],
-            replaces: None, rail: false, extras: vec![], grading: None,
+            replaces: None, rail: false, extras: vec![], grading: None, bridges: vec![],
         });
         let mut m = Map { ctx: egui::Context::default(), rect: Rect::NOTHING };
         m.frame(&mut app, vec![]);
@@ -3681,7 +3729,7 @@ mod tests {
             points: vec![start],
             parts: vec![],
             replaces: Some(9), rail: false, extras: vec![],
-            grading: None,
+            grading: None, bridges: vec![],
         });
         app.rebuild();
         assert!(app.png_previews().is_empty());
@@ -4222,7 +4270,7 @@ mod tests {
             replaces: None,
             rail: false,
             extras: vec![],
-            grading: None,
+            grading: None, bridges: vec![],
         });
         app.selected = Some(Selection::Route(0));
         let settle = |app: &mut App| {
@@ -4298,7 +4346,7 @@ mod tests {
         let deliver = |app: &mut App, parts: Vec<roads::PlacedPart>| {
             let (tx, rx) = mpsc::channel();
             let points = app.doc.routes[0].points.clone();
-            tx.send(Ok(Loaded::Route(0, points, parts, vec![]))).unwrap();
+            tx.send(Ok(Loaded::Route(0, points, parts, vec![], vec![]))).unwrap();
             app.jobs.push(Job { rx, cancel: Arc::new(AtomicBool::new(false)), label: "route".into() });
         };
         deliver(&mut app, part.clone());

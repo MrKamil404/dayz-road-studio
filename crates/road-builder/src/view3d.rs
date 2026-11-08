@@ -447,8 +447,8 @@ pub struct RoadItem {
     pub placements: Vec<(PathBuf, f64, Point)>,
     /// Tracks are rigid; road parts follow the terrain.
     pub rigid: bool,
-    /// Where each rigid piece lies on the terrain, one per placement.
-    pub poses: Vec<crate::rails::Pose>,
+    /// Where each rigid piece lies, one per placement; `None` follows the terrain.
+    pub poses: Vec<Option<crate::rails::Pose>>,
     /// The selected road keeps its highlighted footprint over the models.
     pub highlight: bool,
 }
@@ -551,9 +551,7 @@ pub fn build_roads(
                     let corners: Vec<[f32; 3]> = tri
                         .iter()
                         .map(|v| {
-                            if item.rigid
-                                && let Some(pose) = poses.map(|p| p[index])
-                            {
+                            if let Some(pose) = poses.and_then(|p| p[index]) {
                                 let q = pose.apply(*v);
                                 return layout.local([q[0], q[1]], q[2]);
                             }
